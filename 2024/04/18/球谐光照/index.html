@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 7.1.1">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"ritchielambda.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":true,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="前文前置逻辑： 傅里叶级数对于任意的周期函数，都可以用一系列的正弦函数展开：  f(t)&#x3D;A_0+\sum_{n&#x3D;1}^{\infty}A_n\sin(n\omega t + \phi_n) \tag{1.1}也可表示为：  f(t) &#x3D;\frac{a_0}{2}+\sum_{n&#x3D;1}^{\infty}[a_n\cos(n\omega t) + b_n\sin(n\omega t)] \tag{1">
+<meta property="og:type" content="article">
+<meta property="og:title" content="球谐光照">
+<meta property="og:url" content="https://ritchielambda.github.io/2024/04/18/%E7%90%83%E8%B0%90%E5%85%89%E7%85%A7/index.html">
+<meta property="og:site_name" content="Ritchie&#39;s Blog">
+<meta property="og:description" content="前文前置逻辑： 傅里叶级数对于任意的周期函数，都可以用一系列的正弦函数展开：  f(t)&#x3D;A_0+\sum_{n&#x3D;1}^{\infty}A_n\sin(n\omega t + \phi_n) \tag{1.1}也可表示为：  f(t) &#x3D;\frac{a_0}{2}+\sum_{n&#x3D;1}^{\infty}[a_n\cos(n\omega t) + b_n\sin(n\omega t)] \tag{1">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://ritchielambda.github.io/2024/04/18/%E7%90%83%E8%B0%90%E5%85%89%E7%85%A7/eiwt.gif">
+<meta property="og:image" content="https://ritchielambda.github.io/2024/04/18/%E7%90%83%E8%B0%90%E5%85%89%E7%85%A7/%E5%82%85%E9%87%8C%E5%8F%B6.gif">
+<meta property="og:image" content="https://ritchielambda.github.io/2024/04/18/%E7%90%83%E8%B0%90%E5%85%89%E7%85%A7/%E7%90%83%E8%B0%901.jpg">
+<meta property="og:image" content="https://ritchielambda.github.io/2024/04/18/%E7%90%83%E8%B0%90%E5%85%89%E7%85%A7/%E7%90%83%E8%B0%902.jpg">
+<meta property="og:image" content="https://ritchielambda.github.io/2024/04/18/%E7%90%83%E8%B0%90%E5%85%89%E7%85%A7/sh_3.png">
+<meta property="article:published_time" content="2024-04-18T19:47:53.000Z">
+<meta property="article:modified_time" content="2025-06-03T15:32:27.197Z">
+<meta property="article:author" content="Ritchie">
+<meta property="article:tag" content="图形学">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://ritchielambda.github.io/2024/04/18/%E7%90%83%E8%B0%90%E5%85%89%E7%85%A7/eiwt.gif">
+
+<link rel="canonical" href="https://ritchielambda.github.io/2024/04/18/%E7%90%83%E8%B0%90%E5%85%89%E7%85%A7/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>球谐光照 | Ritchie's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+<link rel="alternate" href="/atom.xml" title="Ritchie's Blog" type="application/atom+xml">
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Ritchie's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://ritchielambda.github.io/2024/04/18/%E7%90%83%E8%B0%90%E5%85%89%E7%85%A7/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpg">
+      <meta itemprop="name" content="Ritchie">
+      <meta itemprop="description" content="Engine/Graphics 爱好者 做人没有梦想,那和咸鱼有什么区别">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Ritchie's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          球谐光照
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2024-04-18 19:47:53" itemprop="dateCreated datePublished" datetime="2024-04-18T19:47:53+00:00">2024-04-18</time>
+            </span>
+
+          
+            <span class="post-meta-item" title="本文字数">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+              <span>2k</span>
+            </span>
+            <span class="post-meta-item" title="阅读时长">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+              <span>7 分钟</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="前文"><a href="#前文" class="headerlink" title="前文"></a>前文</h1><p>前置逻辑：</p>
+<h3 id="傅里叶级数"><a href="#傅里叶级数" class="headerlink" title="傅里叶级数"></a>傅里叶级数</h3><p>对于任意的周期函数，都可以用一系列的正弦函数展开：</p>
+<script type="math/tex; mode=display">
+f(t)=A_0+\sum_{n=1}^{\infty}A_n\sin(n\omega t + \phi_n)
+\tag{1.1}</script><p>也可表示为：</p>
+<script type="math/tex; mode=display">
+f(t) =\frac{a_0}{2}+\sum_{n=1}^{\infty}[a_n\cos(n\omega t) + b_n\sin(n\omega t)]
+\tag{1.2}</script><p>这样的展开即傅里叶级数，我们最终的目标就是求出每个函数的系数$a_n$与$b_n$。</p>
+<span id="more"></span>
+<h3 id="傅里叶变换："><a href="#傅里叶变换：" class="headerlink" title="傅里叶变换："></a>傅里叶变换：</h3><p>对于部分在时域不容易处理的问题，我们会选择将函数转换到频域进行处理，比如我们需要去除掉语音的低频部分，这在时域函数中非常难以实现，但在频域表示下只是一个突起点，傅里叶级数只能针对周期函数有效，如果是非周期函数，我们就需要傅里叶变换帮我们把函数从时域变换到频域。</p>
+<script type="math/tex; mode=display">
+\begin{cases}
+F(\omega)=\frac{1}{2\pi}\displaystyle\int^{\infty}_{-\infty}f(t)e^{-i\omega t}dt\\
+f(t)=\displaystyle\int^{\infty}_{-\infty}F(\omega)e^{i\omega t}dt
+\end{cases}</script><p>离散傅里叶变换是从系数求点值对。</p>
+<p>离线傅里叶逆变换是从点值对求系数。</p>
+<p>我们也可以用下面的一张图来理解傅里叶展开，$e^{i\omega t}$是一个连续旋转的圆，我们可以用无数个连续旋转的圆，大圆套小圆，来拟合满足狄利赫里条件。</p>
+<p><img src="/2024/04/18/%E7%90%83%E8%B0%90%E5%85%89%E7%85%A7/eiwt.gif" alt="eiwt"></p>
+<p>​                                                    $e^{i\omega t}$ 的表示</p>
+<p><img src="/2024/04/18/%E7%90%83%E8%B0%90%E5%85%89%E7%85%A7/傅里叶.gif" alt="傅里叶"></p>
+<h3 id="拉普拉斯方程："><a href="#拉普拉斯方程：" class="headerlink" title="拉普拉斯方程："></a>拉普拉斯方程：</h3><p>拉普拉斯方程是关于多元函数的二阶偏微分方程，对于一个三元函数$u=f(x,y,z)$</p>
+<script type="math/tex; mode=display">
+\Delta u=\nabla\cdot\nabla u=\frac{\partial^2u}{\partial x^2} + \frac{\partial^2u}{\partial y^2}+ \frac{\partial^2u}{\partial z^2} =0
+\tag{2.1}</script><p>它的解分为两部分：方位角项和极角项，恰好就是我们最终需要的球谐函数表达式。其中极角项又被称为伴随勒让德多项式。</p>
+<p>多项式乘法可以由离线变换先转换为点值对做乘法，然后逆变换回系数表达式，这样时间复杂度会变小。</p>
+<p>通俗来说，球谐光照是对漫反射光照的一种近似手段，和IBL类似，但是好处如下：</p>
+<pre><code> 1. 只存储球谐系数，需要的存储空间非常小
+ 2. 利用球谐函数的性质：正交性 &amp; 旋转不变性，可以消除/大大减少漫反射过程中对半球面的积分计算，从而实现实时光照计算。
+</code></pre><h1 id="1-球谐函数"><a href="#1-球谐函数" class="headerlink" title="1. 球谐函数"></a>1. 球谐函数</h1><h2 id="1-1-函数定义"><a href="#1-1-函数定义" class="headerlink" title="1.1 函数定义"></a>1.1 函数定义</h2><p>球谐函数是由一组正交基函数组成，类似于傅里叶展开，这一组基函数可以用来拟合各种函数，定义如下：</p>
+<script type="math/tex; mode=display">
+y_l^m=\begin{cases}
+    \sqrt{2}Re(Y_l^m) \quad m>0\\
+    \sqrt{2}Im(Y_l^m) \quad m<0\\
+    Y_l^0 \quad m=0\\
+    \end{cases}
+    =\begin{cases}
+    \sqrt{2}K_l^mcos m\varphi P_l^m(cos\theta) \quad m>0\\
+    \sqrt{2}K_l^msin |m|\varphi P_l^{|m|}(cos\theta) \quad m<0\\
+    K_l^0P_l^0cos(\theta)\\
+    \end{cases}\tag1</script><script type="math/tex; mode=display">
+P_l^m(x)=\frac{(-1)^m(1-x^2)^{\frac{m}{2}}}{2^ll!}\frac{d^{l+m}}{dx^{l+m}}[(x^2-1)^l]\tag2</script><p>其中y的下标<em>l</em>代表球谐函数的阶数，每一阶由2<em>n</em>+1(-m ~ m)个函数组成，其中$K_l^m$被称为归一化常数，$P_l^m$被称为<strong>伴随勒让德多项式</strong>，该方程是拉普拉斯方程的解，在求解时我们一般不直接对方程求解，而是利用它的递推公式，逐级求解，递推公式如下：</p>
+<script type="math/tex; mode=display">
+\begin{cases}
+P_m^m(x)=(-1)^m(2m-1)!!(1-x^2)^{\frac{m}{2}}\\
+p_{m+1}^m=x(2m+1)p_m^m(x)\\
+(l-m)P_l^m(x)=x(2l-1)p_{l-1}^m-(l+m-1)p_{l-2}^m(x)
+
+\end{cases}\tag5</script><h2 id="1-2-函数图形化表示"><a href="#1-2-函数图形化表示" class="headerlink" title="1.2 函数图形化表示"></a>1.2 函数图形化表示</h2><p><img src="/2024/04/18/%E7%90%83%E8%B0%90%E5%85%89%E7%85%A7/球谐1.jpg" alt></p>
+<center>
+    球谐函数的通用表示之一，红色代表正，蓝色代表负
+</center>
+
+
+<p><img src="/2024/04/18/%E7%90%83%E8%B0%90%E5%85%89%E7%85%A7/球谐2.jpg" alt="球谐2"></p>
+<center>
+    球谐函数的通用表达之二：用cubemap展开来表达函数，红色代表正，蓝色代表负，绿色代表0，其中函数值被编码进不同的channel
+</center>
+
+<h2 id="1-3-球谐函数性质"><a href="#1-3-球谐函数性质" class="headerlink" title="1.3 球谐函数性质"></a>1.3 球谐函数性质</h2><h3 id="1-3-1-正交性"><a href="#1-3-1-正交性" class="headerlink" title="1.3.1 正交性"></a>1.3.1 正交性</h3><p>假设$y_i$，$y_j$为两个球谐函数，其中$i\in{k}$，，$k$为$2l+m$，那么:</p>
+<script type="math/tex; mode=display">
+\int_S{y_iy_jd(\theta,\varphi)}=0, when\quad{i\neq j}\tag6</script><p>伴随勒让德多项式是具备正交完备性的，为了让球谐函数也具备正交完备性，所以添加了归一化参数，也就是$K_l^m$</p>
+<script type="math/tex; mode=display">
+Y_l^m(\theta,\varphi)=K_l^me^{im\varphi}P_l^{|m|}(cos\theta),l\in{N},-l \leq m \leq l \tag2</script><script type="math/tex; mode=display">
+K_l^m=\sqrt{\frac{(2l+1)(l-|m|)!}{4\pi(l+|m|)!}}\tag3</script><h3 id="1-3-2-旋转不变性"><a href="#1-3-2-旋转不变性" class="headerlink" title="1.3.2 旋转不变性"></a>1.3.2 旋转不变性</h3><p>通过上面的介绍，我们知道一个指定的函数$f(\theta,\varphi)$可以被一组球谐函数$y(\theta,\varphi)$所表示，当$(\theta,\varphi)$所表示的点旋转一定角度后得到的新的函数$f(R(\theta,\varphi))$,$R$代表旋转函数，我们要求对应新函数的球谐函数，不需要进行重新计算，可以直接通过原函数的球谐函数经过线性变化得到。</p>
+<h3 id="1-3-3求解"><a href="#1-3-3求解" class="headerlink" title="1.3.3求解"></a>1.3.3求解</h3><p>为了能够应用，我们需要把球谐函数用实数来表示，也就是公式$(1)$的部分，利用极坐标和正交坐标的转换表达，我们可以得到$r=1$时候的球谐函数前三阶的表达式：</p>
+<p><img src="/2024/04/18/%E7%90%83%E8%B0%90%E5%85%89%E7%85%A7/sh_3.png" alt="sh_3"></p>
+<p>和UE中提供的球谐函数一致：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// SHCommon.ush</span></span><br><span class="line"><span class="function">FTwoBandSHVector <span class="title">SHBasisFunction</span><span class="params">(half3 InputVector)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    FTwoBandSHVector Result;</span><br><span class="line">    <span class="comment">// These are derived from simplifying SHBasisFunction in C++</span></span><br><span class="line">    Result.V.x = <span class="number">0.282095f</span>; </span><br><span class="line">    Result.V.y = <span class="number">-0.488603f</span> * InputVector.y;</span><br><span class="line">    Result.V.z = <span class="number">0.488603f</span> * InputVector.z;</span><br><span class="line">    Result.V.w = <span class="number">-0.488603f</span> * InputVector.x;</span><br><span class="line">    <span class="keyword">return</span> Result;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function">FThreeBandSHVector <span class="title">SHBasisFunction3</span><span class="params">(half3 InputVector)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    FThreeBandSHVector Result;</span><br><span class="line">    <span class="comment">// These are derived from simplifying SHBasisFunction in C++</span></span><br><span class="line">    Result.V0.x = <span class="number">0.282095f</span>; </span><br><span class="line">    Result.V0.y = <span class="number">-0.488603f</span> * InputVector.y;</span><br><span class="line">    Result.V0.z = <span class="number">0.488603f</span> * InputVector.z;</span><br><span class="line">    Result.V0.w = <span class="number">-0.488603f</span> * InputVector.x;</span><br><span class="line"></span><br><span class="line">    half3 VectorSquared = InputVector * InputVector;</span><br><span class="line">    Result.V1.x = <span class="number">1.092548f</span> * InputVector.x * InputVector.y;</span><br><span class="line">    Result.V1.y = <span class="number">-1.092548f</span> * InputVector.y * InputVector.z;</span><br><span class="line">    Result.V1.z = <span class="number">0.315392f</span> * (<span class="number">3.0f</span> * VectorSquared.z - <span class="number">1.0f</span>);</span><br><span class="line">    Result.V1.w = <span class="number">-1.092548f</span> * InputVector.x * InputVector.z;</span><br><span class="line">    Result.V2 = <span class="number">0.546274f</span> * (VectorSquared.x - VectorSquared.y);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> Result;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>​    这样一组基底函数，是不是有点像之前的傅里叶三角函数展开，不同的是我们把三角函数换成了球谐函数。</p>
+<h1 id="2-光照方程"><a href="#2-光照方程" class="headerlink" title="2. 光照方程"></a>2. 光照方程</h1><p>​    通用的渲染方程如下，其中$f_r$被称为表面传输系数，也就是我们通常提到的$brdf$，一般的$IBL$照明方案中，为了得到漫反射结果，我们通常会根据环境立方体贴图计算出一个以出射方向采样的辐照度图，图上的每一个像素代表在当前出射方向的半球内入射光积分。每次运算都需要对平面所在的半球$\Omega$进行积分。</p>
+<script type="math/tex; mode=display">
+L(p,w_o)=\int_{\Omega}{f_r(p,w_i,w_o)L_i(p,w_i)n\cdot w_i}dw_i\tag7</script><p>对于漫反射来说$f_r=\frac{1}{\pi}$,然后我们把光照部分和$brdf$以及与法线与入射光夹角分别用一个球谐函数$L_k,T_k$来表示，则公式（7）可以表示为：</p>
+<script type="math/tex; mode=display">
+L(p,\omega_o)=\int_{S}L(p,\omega_i)\cdot T(p,\omega_i,\omega_o)d\omega_i \tag8</script><p>对于光源部分，假设球谐系数是$l_k$可以表示为:</p>
+<script type="math/tex; mode=display">
+L(p,\omega_i)=\sum_{k=0}^{k<n}l_k\cdot b_k(\omega_i) \tag9</script><p>其系数由原函数和球谐函数积分得到：</p>
+<script type="math/tex; mode=display">
+l_k=\int_{S}L(p,\omega_i)\cdot b_k d\omega_i \tag{10}</script><p>对于传输部分，假设球谐系数是$t_k$可以表示为：</p>
+<script type="math/tex; mode=display">
+T(p,\omega_i)=\sum_{k=0}^{k<n}t_k\cdot b_k(\omega_i) \tag9</script><p>同理其系数为：</p>
+<script type="math/tex; mode=display">
+t_k=\int_{S}T(p,\omega_i)\cdot b_k d\omega_i \tag{10}</script><p>带入光照方程可得：</p>
+<p>我们可以像傅里叶级数展开一样，把目标函数按照球谐函数展开，但是需要求得球谐系数，球谐系数可以由目标函数和球谐基函数积分计算得到。</p>
+<p>这样带入原来的光照方程积分式，就可以省去积分表达，只需要计算两个部分的球谐系数就行。</p>
+<p>光源部分的球谐系数由光照和球谐函数积分计算得到</p>
+<p>传输部分的球谐系数可以直接转换成定积分计算出来。</p>
+<p>光照函数拆分成两部分，分别用球谐函数预计算，就不需要积分，直接点乘就能算出来结果，但是需要提前算出来两个部分的球谐系数。</p>
+<h1 id="UE-漫反射实现"><a href="#UE-漫反射实现" class="headerlink" title="UE 漫反射实现"></a>UE 漫反射实现</h1>
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E5%9B%BE%E5%BD%A2%E5%AD%A6/" rel="tag"># 图形学</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2023/11/05/VertexFactory/" rel="prev" title="UE VertexFactory">
+      <i class="fa fa-chevron-left"></i> UE VertexFactory
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2024/05/25/VirtualTexture/" rel="next" title="RumtimeVirtualTexture">
+      RumtimeVirtualTexture <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%89%8D%E6%96%87"><span class="nav-number">1.</span> <span class="nav-text">前文</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%82%85%E9%87%8C%E5%8F%B6%E7%BA%A7%E6%95%B0"><span class="nav-number">1.0.1.</span> <span class="nav-text">傅里叶级数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%82%85%E9%87%8C%E5%8F%B6%E5%8F%98%E6%8D%A2%EF%BC%9A"><span class="nav-number">1.0.2.</span> <span class="nav-text">傅里叶变换：</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8B%89%E6%99%AE%E6%8B%89%E6%96%AF%E6%96%B9%E7%A8%8B%EF%BC%9A"><span class="nav-number">1.0.3.</span> <span class="nav-text">拉普拉斯方程：</span></a></li></ol></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#1-%E7%90%83%E8%B0%90%E5%87%BD%E6%95%B0"><span class="nav-number">2.</span> <span class="nav-text">1. 球谐函数</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-1-%E5%87%BD%E6%95%B0%E5%AE%9A%E4%B9%89"><span class="nav-number">2.1.</span> <span class="nav-text">1.1 函数定义</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#1-2-%E5%87%BD%E6%95%B0%E5%9B%BE%E5%BD%A2%E5%8C%96%E8%A1%A8%E7%A4%BA"><span class="nav-number">2.2.</span> <span class="nav-text">1.2 函数图形化表示</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#1-3-%E7%90%83%E8%B0%90%E5%87%BD%E6%95%B0%E6%80%A7%E8%B4%A8"><span class="nav-number">2.3.</span> <span class="nav-text">1.3 球谐函数性质</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-3-1-%E6%AD%A3%E4%BA%A4%E6%80%A7"><span class="nav-number">2.3.1.</span> <span class="nav-text">1.3.1 正交性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-3-2-%E6%97%8B%E8%BD%AC%E4%B8%8D%E5%8F%98%E6%80%A7"><span class="nav-number">2.3.2.</span> <span class="nav-text">1.3.2 旋转不变性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-3-3%E6%B1%82%E8%A7%A3"><span class="nav-number">2.3.3.</span> <span class="nav-text">1.3.3求解</span></a></li></ol></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#2-%E5%85%89%E7%85%A7%E6%96%B9%E7%A8%8B"><span class="nav-number">3.</span> <span class="nav-text">2. 光照方程</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#UE-%E6%BC%AB%E5%8F%8D%E5%B0%84%E5%AE%9E%E7%8E%B0"><span class="nav-number">4.</span> <span class="nav-text">UE 漫反射实现</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Ritchie"
+      src="/images/avatar.jpg">
+  <p class="site-author-name" itemprop="name">Ritchie</p>
+  <div class="site-description" itemprop="description">Engine/Graphics 爱好者 做人没有梦想,那和咸鱼有什么区别</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">14</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">2</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2025</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Ritchie</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-area"></i>
+    </span>
+      <span class="post-meta-item-text">站点总字数：</span>
+    <span title="站点总字数">27k</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+      <span class="post-meta-item-text">站点阅读时长 &asymp;</span>
+    <span title="站点阅读时长">1:38</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js"></script>
+  <script src="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+
+<script>
+  if (typeof MathJax === 'undefined') {
+    window.MathJax = {
+      loader: {
+        source: {
+          '[tex]/amsCd': '[tex]/amscd',
+          '[tex]/AMScd': '[tex]/amscd'
+        }
+      },
+      tex: {
+        inlineMath: {'[+]': [['$', '$']]},
+        tags: 'ams'
+      },
+      options: {
+        renderActions: {
+          findScript: [10, doc => {
+            document.querySelectorAll('script[type^="math/tex"]').forEach(node => {
+              const display = !!node.type.match(/; *mode=display/);
+              const math = new doc.options.MathItem(node.textContent, doc.inputJax[0], display);
+              const text = document.createTextNode('');
+              node.parentNode.replaceChild(text, node);
+              math.start = {node: text, delim: '', n: 0};
+              math.end = {node: text, delim: '', n: 0};
+              doc.math.push(math);
+            });
+          }, '', false],
+          insertedScript: [200, () => {
+            document.querySelectorAll('mjx-container').forEach(node => {
+              let target = node.parentNode;
+              if (target.nodeName.toLowerCase() === 'li') {
+                target.parentNode.classList.add('has-jax');
+              }
+            });
+          }, '', false]
+        }
+      }
+    };
+    (function () {
+      var script = document.createElement('script');
+      script.src = '//cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js';
+      script.defer = true;
+      document.head.appendChild(script);
+    })();
+  } else {
+    MathJax.startup.document.state(0);
+    MathJax.texReset();
+    MathJax.typeset();
+  }
+</script>
+
+    
+
+  
+
+</body>
+</html>
