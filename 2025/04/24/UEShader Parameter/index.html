@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 7.1.1">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"ritchielambda.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":true,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="UE ShaderParameterUE的shader参数从声明，到被绑定到真正的shader中，是一条非常漫长但又环环相扣的流程，最近在看自定义meshpass的实现，正好看到这块，顺便整理记录下。 梳理的顺序将按照以下顺序来分析，前两节的内容不是本文的重点，所以这里会带过下大致的流程，不会展开分析。  Shader信息收集&amp;编译 Shader参数的定义 Shader参数检查 Shade">
+<meta property="og:type" content="article">
+<meta property="og:title" content="UE ShaderParameter">
+<meta property="og:url" content="https://ritchielambda.github.io/2025/04/24/UEShader%20Parameter/index.html">
+<meta property="og:site_name" content="Ritchie&#39;s Blog">
+<meta property="og:description" content="UE ShaderParameterUE的shader参数从声明，到被绑定到真正的shader中，是一条非常漫长但又环环相扣的流程，最近在看自定义meshpass的实现，正好看到这块，顺便整理记录下。 梳理的顺序将按照以下顺序来分析，前两节的内容不是本文的重点，所以这里会带过下大致的流程，不会展开分析。  Shader信息收集&amp;编译 Shader参数的定义 Shader参数检查 Shade">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://lilithgames.feishu.cn/space/api/box/stream/download/asynccode/?code=NTIxYzdjZTJjMjJmNjM1OWU3ZTczZGIxYThhMTg3MGFfMmRheHhHYmRGSFpZVFZZTWFkckR1TUJiUTdpOTQyQ0ZfVG9rZW46UkluMWJZa3RXb0xjUnR4cjhkaWNuT1ZCbnZjXzE3NDU0ODI1NzM6MTc0NTQ4NjE3M19WNA">
+<meta property="article:published_time" content="2025-04-24T22:25:53.000Z">
+<meta property="article:modified_time" content="2025-06-30T15:40:06.389Z">
+<meta property="article:author" content="Ritchie">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://lilithgames.feishu.cn/space/api/box/stream/download/asynccode/?code=NTIxYzdjZTJjMjJmNjM1OWU3ZTczZGIxYThhMTg3MGFfMmRheHhHYmRGSFpZVFZZTWFkckR1TUJiUTdpOTQyQ0ZfVG9rZW46UkluMWJZa3RXb0xjUnR4cjhkaWNuT1ZCbnZjXzE3NDU0ODI1NzM6MTc0NTQ4NjE3M19WNA">
+
+<link rel="canonical" href="https://ritchielambda.github.io/2025/04/24/UEShader%20Parameter/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>UE ShaderParameter | Ritchie's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+<link rel="alternate" href="/atom.xml" title="Ritchie's Blog" type="application/atom+xml">
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Ritchie's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://ritchielambda.github.io/2025/04/24/UEShader%20Parameter/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpg">
+      <meta itemprop="name" content="Ritchie">
+      <meta itemprop="description" content="Engine/Graphics 爱好者 做人没有梦想,那和咸鱼有什么区别">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Ritchie's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          UE ShaderParameter
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2025-04-24 22:25:53" itemprop="dateCreated datePublished" datetime="2025-04-24T22:25:53+00:00">2025-04-24</time>
+            </span>
+
+          
+            <span class="post-meta-item" title="本文字数">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+              <span>3.6k</span>
+            </span>
+            <span class="post-meta-item" title="阅读时长">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+              <span>13 分钟</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="UE-ShaderParameter"><a href="#UE-ShaderParameter" class="headerlink" title="UE ShaderParameter"></a>UE ShaderParameter</h1><p>UE的shader参数从声明，到被绑定到真正的shader中，是一条非常漫长但又环环相扣的流程，最近在看自定义meshpass的实现，正好看到这块，顺便整理记录下。</p>
+<p>梳理的顺序将按照以下顺序来分析，前两节的内容不是本文的重点，所以这里会带过下大致的流程，不会展开分析。</p>
+<ul>
+<li>Shader信息收集&amp;编译</li>
+<li>Shader参数的定义</li>
+<li>Shader参数检查</li>
+<li>Shader参数绑定</li>
+<li>UE的多种Buffer设置原理（比如viewuniformbuffer，addpass</li>
+</ul>
+<span id="more"></span>
+<h2 id="1-Shader信息收集-amp-编译"><a href="#1-Shader信息收集-amp-编译" class="headerlink" title="1. Shader信息收集&amp;编译"></a>1. Shader信息收集&amp;编译</h2><p>我们都知道，UE的Shader分为MaterialShader和GlobalShader，一个可以实例化，一个全局只有一份，这两种Shader的信息收集和定义大致相同，但是编译时机和存储方式不一样。</p>
+<p>对于分散在各个文件中的Shader定义，会通过定义宏将FShderType收集到一个全局的变量中。在引擎初始化的时候会利用之前static变量收集的信息进行编译GlobalShader，把编译的结果存储在一个GGlobalShaderMap中。而对于MaterialShader，则是存储在每个Material对于的ShaderMap中。在用到对应的材质的时候，才会执行编译。</p>
+<p>在编译完成后，会调用Shader宏中提供的构造函数指针，构造FShader。</p>
+<h2 id="2-参数定义"><a href="#2-参数定义" class="headerlink" title="2. 参数定义"></a>2. 参数定义</h2><p>首先不得不提的一些宏： </p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">BEGIN_SHADER_PARAMETER_STRUCT </span><br><span class="line">SHADER_PARAMETER_STRUCT_REF </span><br><span class="line">BEGIN_GLOBAL_SHADER_PARAMETER_STRUCT </span><br><span class="line">SHADER_PARAMETER ...</span><br></pre></td></tr></table></figure>
+<p>我们一个个来看</p>
+<p>一般一个简单的shader如下：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">FLightGridCompactCS</span> : <span class="keyword">public</span> FGlobalShader</span><br><span class="line">&#123;</span><br><span class="line">   <span class="built_in">DECLARE_GLOBAL_SHADER</span>(FLightGridCompactCS)</span><br><span class="line">   <span class="built_in">SHADER_USE_PARAMETER_STRUCT</span>(FLightGridCompactCS, FGlobalShader)</span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">   <span class="built_in">BEGIN_SHADER_PARAMETER_STRUCT</span>(FParameters, )</span><br><span class="line">      <span class="built_in">SHADER_PARAMETER_STRUCT_REF</span>(FForwardLightData, Forward)</span><br><span class="line">      <span class="built_in">SHADER_PARAMETER_STRUCT_REF</span>(FViewUniformShaderParameters, View)</span><br><span class="line">      <span class="built_in">SHADER_PARAMETER_UAV</span>(RWBuffer&lt;uint&gt;, RWNumCulledLightsGrid)</span><br><span class="line">      <span class="built_in">SHADER_PARAMETER_UAV</span>(RWBuffer&lt;uint&gt;, RWCulledLightDataGrid)</span><br><span class="line">      <span class="built_in">SHADER_PARAMETER_RDG_BUFFER_UAV</span>(RWBuffer&lt;uint&gt;, RWNextCulledLightData)</span><br><span class="line">      <span class="built_in">SHADER_PARAMETER_RDG_BUFFER_SRV</span>(Buffer&lt;uint&gt;, StartOffsetGrid)</span><br><span class="line">      <span class="built_in">SHADER_PARAMETER_RDG_BUFFER_SRV</span>(Buffer&lt;uint&gt;, CulledLightLinks)</span><br><span class="line"></span><br><span class="line">   <span class="built_in">END_SHADER_PARAMETER_STRUCT</span>()</span><br><span class="line"></span><br><span class="line">   <span class="function"><span class="type">static</span> <span class="type">bool</span> <span class="title">ShouldCompilePermutation</span><span class="params">(<span class="type">const</span> FGlobalShaderPermutationParameters&amp; Parameters)</span></span></span><br><span class="line"><span class="function">   </span>&#123;</span><br><span class="line">      <span class="keyword">return</span> <span class="built_in">IsFeatureLevelSupported</span>(Parameters.Platform, ERHIFeatureLevel::SM5) || <span class="built_in">IsMobileDeferredShadingEnabled</span>(Parameters.Platform);</span><br><span class="line">   &#125;</span><br><span class="line"></span><br><span class="line">   <span class="function"><span class="type">static</span> <span class="type">void</span> <span class="title">ModifyCompilationEnvironment</span><span class="params">(<span class="type">const</span> FGlobalShaderPermutationParameters&amp; Parameters, FShaderCompilerEnvironment&amp; OutEnvironment)</span></span></span><br><span class="line"><span class="function">   </span>&#123;</span><br><span class="line">      FGlobalShader::<span class="built_in">ModifyCompilationEnvironment</span>(Parameters, OutEnvironment);</span><br><span class="line">      OutEnvironment.<span class="built_in">SetDefine</span>(<span class="built_in">TEXT</span>(<span class="string">&quot;THREADGROUP_SIZE&quot;</span>), LightGridInjectionGroupSize);</span><br><span class="line">      FForwardLightingParameters::<span class="built_in">ModifyCompilationEnvironment</span>(Parameters.Platform, OutEnvironment);</span><br><span class="line">      OutEnvironment.<span class="built_in">SetDefine</span>(<span class="built_in">TEXT</span>(<span class="string">&quot;LIGHT_LINK_STRIDE&quot;</span>), LightLinkStride);</span><br><span class="line">      OutEnvironment.<span class="built_in">SetDefine</span>(<span class="built_in">TEXT</span>(<span class="string">&quot;MAX_CAPTURES&quot;</span>), GMaxNumReflectionCaptures);</span><br><span class="line">      OutEnvironment.<span class="built_in">SetDefine</span>(<span class="built_in">TEXT</span>(<span class="string">&quot;ENABLE_LIGHT_CULLING_VIEW_SPACE_BUILD_DATA&quot;</span>), ENABLE_LIGHT_CULLING_VIEW_SPACE_BUILD_DATA);</span><br><span class="line">   &#125;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+<p>在分析宏之前，首先要明确，我们声明的shader参数分为两种：</p>
+<ol>
+<li>全局参数</li>
+<li>局部参数</li>
+</ol>
+<p>这两者的区别就是，局部参数只能在当前shader使用，而全局参数可以被任何一个shader使用，无需在usf里再去声明，而在shader中声明的参数，可以两种类型混着来。</p>
+<h3 id="shader参数宏分析"><a href="#shader参数宏分析" class="headerlink" title="shader参数宏分析"></a>shader参数宏分析</h3><h3 id="2-1-BEGIN-SHADER-PARAMETER-STRUCT"><a href="#2-1-BEGIN-SHADER-PARAMETER-STRUCT" class="headerlink" title="2.1 BEGIN_SHADER_PARAMETER_STRUCT"></a>2.1 BEGIN_SHADER_PARAMETER_STRUCT</h3><p>这是一组宏，可以在中间声明各种类型/结构的shader参数。</p>
+<h4 id="第一层Define"><a href="#第一层Define" class="headerlink" title="第一层Define:"></a>第一层Define:</h4><figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/** Begins &amp; ends a shader parameter structure.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * Example:</span></span><br><span class="line"><span class="comment"> * BEGIN_SHADER_PARAMETER_STRUCT(FMyParameterStruct, RENDERER_API)</span></span><br><span class="line"><span class="comment"> * END_SHADER_PARAMETER_STRUCT()</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> BEGIN_SHADER_PARAMETER_STRUCT(StructTypeName, PrefixKeywords) \</span></span><br><span class="line"><span class="meta">   INTERNAL_SHADER_PARAMETER_STRUCT_BEGIN(StructTypeName, PrefixKeywords, &#123;&#125;, INTERNAL_SHADER_PARAMETER_GET_STRUCT_METADATA(StructTypeName), INTERNAL_SHADER_PARAMETER_STRUCT_CREATE_UNIFORM_BUFFER)</span></span><br></pre></td></tr></table></figure>
+<p>这里的StructTypeName就是FParameters，Prefixkeywords是空，宏里套宏，经典操作。</p>
+<h4 id="第二层Define"><a href="#第二层Define" class="headerlink" title="第二层Define"></a>第二层Define</h4><figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/** Begins a uniform buffer struct declaration. */</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> INTERNAL_SHADER_PARAMETER_STRUCT_BEGIN(StructTypeName,PrefixKeywords,ConstructorSuffix,GetStructMetadataScope,CreateUniformBufferImpl) \</span></span><br><span class="line"><span class="meta">   MS_ALIGN(SHADER_PARAMETER_STRUCT_ALIGNMENT) class PrefixKeywords StructTypeName \</span></span><br><span class="line"><span class="meta">   &#123; \</span></span><br><span class="line"><span class="meta">   public: \</span></span><br><span class="line"><span class="meta">      StructTypeName () ConstructorSuffix \</span></span><br><span class="line"><span class="meta">      struct FTypeInfo &#123; \</span></span><br><span class="line"><span class="meta">         static constexpr int32 NumRows = 1; \</span></span><br><span class="line"><span class="meta">         static constexpr int32 NumColumns = 1; \</span></span><br><span class="line"><span class="meta">         static constexpr int32 NumElements = 0; \</span></span><br><span class="line"><span class="meta">         static constexpr int32 Alignment = SHADER_PARAMETER_STRUCT_ALIGNMENT; \</span></span><br><span class="line"><span class="meta">         static constexpr bool bIsStoredInConstantBuffer = true; \</span></span><br><span class="line"><span class="meta">         using TAlignedType = StructTypeName; \</span></span><br><span class="line"><span class="meta">         static inline const FShaderParametersMetadata* GetStructMetadata() &#123; GetStructMetadataScope &#125; \</span></span><br><span class="line"><span class="meta">      &#125;; \</span></span><br><span class="line"><span class="meta">      static FUniformBufferRHIRef CreateUniformBuffer(const StructTypeName&amp; InContents, EUniformBufferUsage InUsage) \</span></span><br><span class="line"><span class="meta">      &#123; \</span></span><br><span class="line"><span class="meta">         CreateUniformBufferImpl \</span></span><br><span class="line"><span class="meta">      &#125; \</span></span><br><span class="line"><span class="meta">   private: \</span></span><br><span class="line"><span class="meta">      typedef StructTypeName zzTThisStruct; \</span></span><br><span class="line"><span class="meta">      struct zzFirstMemberId &#123; enum &#123; HasDeclaredResource = 0 &#125;; &#125;; \</span></span><br><span class="line"><span class="meta">      typedef void* zzFuncPtr; \</span></span><br><span class="line"><span class="meta">      typedef zzFuncPtr(*zzMemberFunc)(zzFirstMemberId, TArray<span class="string">&lt;FShaderParametersMetadata::FMember&gt;</span>*); \</span></span><br><span class="line"><span class="meta">      static zzFuncPtr zzAppendMemberGetPrev(zzFirstMemberId, TArray<span class="string">&lt;FShaderParametersMetadata::FMember&gt;</span>*) \</span></span><br><span class="line"><span class="meta">      &#123; \</span></span><br><span class="line"><span class="meta">         return nullptr; \</span></span><br><span class="line"><span class="meta">      &#125; \</span></span><br><span class="line"><span class="meta">      typedef zzFirstMemberId</span></span><br></pre></td></tr></table></figure>
+<p>这里传进来的StructTypeName还是FParameters，第二，三个参数是空，第四五个参数是由宏生成的，可以跳转这里<a target="_blank" rel="noopener" href="https://lilithgames.feishu.cn/docx/LXyBdl7MSoDd28xGUK2cgcZRnMg#BmhAdsdmBoRyCZxsFUncfejCnEd">UE4 shader参数</a> </p>
+<p>第三行声明了一个FParameters类，后面都是这个类的成员变量和宏：</p>
+<p>第六行声明了一个构造函数。</p>
+<p>第七行声明了一个FTypeInfo的结构体。</p>
+<p>第14行声明了一个函数，返回元数据：实现就是第四个参数。</p>
+<p>第16行声明了一个创建uniformbuffer的接口，实现就是第五个参数。</p>
+<p>第21-&gt;28行其实就是声明了一个函数指针：zzMemberFunc，一个函数zzAppendMemberGetPrev</p>
+<p><strong>最后这里留了一个typedef，但没指定typedef的对象，对应这里</strong></p>
+<p><strong>总结起来，BEGIN_SHADER_PARAMETER_STRUCT主要就是声明了FParameters这个类，然后声明了这个类的一些类型信息的成员。</strong></p>
+<h4 id="第四个参数"><a href="#第四个参数" class="headerlink" title="第四个参数"></a>第四个参数</h4><figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> INTERNAL_SHADER_PARAMETER_GET_STRUCT_METADATA(StructTypeName) \</span></span><br><span class="line"><span class="meta">   static FShaderParametersMetadata StaticStructMetadata(\</span></span><br><span class="line"><span class="meta">      FShaderParametersMetadata::EUseCase::ShaderParameterStruct, \</span></span><br><span class="line"><span class="meta">      TEXT(#StructTypeName), \</span></span><br><span class="line"><span class="meta">      TEXT(#StructTypeName), \</span></span><br><span class="line"><span class="meta">      nullptr, \</span></span><br><span class="line"><span class="meta">      nullptr, \</span></span><br><span class="line"><span class="meta">      sizeof(StructTypeName), \</span></span><br><span class="line"><span class="meta">      StructTypeName::zzGetMembers()); \</span></span><br><span class="line"><span class="meta">   return &amp;StaticStructMetadata;</span></span><br></pre></td></tr></table></figure>
+<p>可以看出来这里其实只是声明了一个静态变量FShaderParametersMetadata ，把这个变量返回了。</p>
+<h4 id="第五个参数"><a href="#第五个参数" class="headerlink" title="第五个参数"></a>第五个参数</h4><figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> INTERNAL_SHADER_PARAMETER_STRUCT_CREATE_UNIFORM_BUFFER return nullptr;</span></span><br></pre></td></tr></table></figure>
+<p>只是返回一个空指针</p>
+<h3 id="2-2-SHADER-PARAMETER"><a href="#2-2-SHADER-PARAMETER" class="headerlink" title="2.2 SHADER_PARAMETER"></a>2.2 SHADER_PARAMETER</h3><p>Begin和End之间可以插入任意类型的shader参数，先分析一个最简单的，SHADER_PARAMETER主要是用来声明一个基础类型的shader参数</p>
+<h4 id="第一层define"><a href="#第一层define" class="headerlink" title="第一层define"></a>第一层define</h4><figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> SHADER_PARAMETER(MemberType,MemberName) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER_EX(MemberType,MemberName,EShaderPrecisionModifier::Float)</span></span><br></pre></td></tr></table></figure>
+<h4 id="第二层define"><a href="#第二层define" class="headerlink" title="第二层define"></a>第二层define</h4><figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> SHADER_PARAMETER_EX(MemberType,MemberName,Precision) \</span></span><br><span class="line"><span class="meta">   INTERNAL_SHADER_PARAMETER_EXPLICIT(TShaderParameterTypeInfo<span class="string">&lt;MemberType&gt;</span>::BaseType, TShaderPa</span></span><br><span class="line">   rameterTypeInfo&lt;MemberType&gt;, MemberType,MemberName,,,Precision,<span class="built_in">TEXT</span>(<span class="string">&quot;&quot;</span>),<span class="literal">false</span>)</span><br></pre></td></tr></table></figure>
+<p>首先看第一个参数：TShaderParameterTypeInfo<MemberType>::BaseType 我们用Bool值举例：</MemberType></p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// Compile SHADER_PARAMETER(bool, MyBool), just to give good error message to programmer why they shouldn&#x27;t do that.</span></span><br><span class="line"><span class="keyword">template</span>&lt;&gt;</span><br><span class="line"><span class="keyword">struct</span> <span class="title class_">TShaderParameterTypeInfo</span>&lt;<span class="type">bool</span>&gt;</span><br><span class="line">&#123;</span><br><span class="line">   <span class="type">static</span> <span class="keyword">constexpr</span> EUniformBufferBaseType BaseType = UBMT_BOOL;</span><br><span class="line">   <span class="type">static</span> <span class="keyword">constexpr</span> int32 NumRows = <span class="number">1</span>;</span><br><span class="line">   <span class="type">static</span> <span class="keyword">constexpr</span> int32 NumColumns = <span class="number">1</span>;</span><br><span class="line">   <span class="type">static</span> <span class="keyword">constexpr</span> int32 NumElements = <span class="number">0</span>;</span><br><span class="line">   <span class="type">static</span> <span class="keyword">constexpr</span> int32 Alignment = <span class="number">4</span>;</span><br><span class="line">   <span class="type">static</span> <span class="keyword">constexpr</span> <span class="type">bool</span> bIsStoredInConstantBuffer = <span class="literal">true</span>;</span><br><span class="line">   </span><br><span class="line">   <span class="keyword">using</span> TAlignedType = TAlignedTypedef&lt;<span class="type">bool</span>, Alignment&gt;::Type;</span><br><span class="line"></span><br><span class="line">   <span class="function"><span class="type">static</span> <span class="type">const</span> FShaderParametersMetadata* <span class="title">GetStructMetadata</span><span class="params">()</span> </span>&#123; <span class="keyword">return</span> <span class="literal">nullptr</span>; &#125;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+<p>这里的第一个参数其实就是定义类型的一个枚举值:enum EUniformBufferBaseType : uint8</p>
+<p>第二个参数是TShaderParameterTypeInfo<MemberType>类本身，后面几个参数都比较简单了。</MemberType></p>
+<h4 id="第三层define"><a href="#第三层define" class="headerlink" title="第三层define"></a>第三层define</h4><figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/** Declares a member of a uniform buffer struct. */</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> INTERNAL_SHADER_PARAMETER_EXPLICIT(BaseType,TypeInfo,MemberType,MemberName,ArrayDecl,DefaultValue,Precision,OptionalShaderType,IsMemberStruct) \</span></span><br><span class="line"><span class="meta">      zzMemberId##MemberName; \</span></span><br><span class="line"><span class="meta">   public: \</span></span><br><span class="line"><span class="meta">      TypeInfo::TAlignedType MemberName DefaultValue; \</span></span><br><span class="line"><span class="meta">      static_assert(BaseType != UBMT_INVALID, <span class="string">&quot;Invalid type &quot;</span> #MemberType <span class="string">&quot; of member &quot;</span> #MemberName <span class="string">&quot;.&quot;</span>); \</span></span><br><span class="line"><span class="meta">   private: \</span></span><br><span class="line"><span class="meta">      struct zzNextMemberId##MemberName &#123; enum &#123; HasDeclaredResource = zzMemberId##MemberName::HasDeclaredResource || !TypeInfo::bIsStoredInConstantBuffer &#125;; &#125;; \</span></span><br><span class="line"><span class="meta">      static zzFuncPtr zzAppendMemberGetPrev(zzNextMemberId##MemberName, TArray<span class="string">&lt;FShaderParametersMetadata::FMember&gt;</span>* Members) \</span></span><br><span class="line"><span class="meta">      &#123; \</span></span><br><span class="line"><span class="meta">         static_assert(TypeInfo::bIsStoredInConstantBuffer || TIsArrayOrRefOfType<span class="string">&lt;decltype(OptionalShaderType), TCHAR&gt;</span>::Value, <span class="string">&quot;No shader type for &quot;</span> #MemberName <span class="string">&quot;.&quot;</span>); \</span></span><br><span class="line"><span class="meta">         static_assert(\</span></span><br><span class="line"><span class="meta">            (STRUCT_OFFSET(zzTThisStruct, MemberName) &amp; (TypeInfo::Alignment - 1)) == 0, \</span></span><br><span class="line"><span class="meta">            <span class="string">&quot;Misaligned uniform buffer struct member &quot;</span> #MemberName <span class="string">&quot;.&quot;</span>); \</span></span><br><span class="line"><span class="meta">         Members-&gt;Add(FShaderParametersMetadata::FMember( \</span></span><br><span class="line"><span class="meta">            TEXT(#MemberName), \</span></span><br><span class="line"><span class="meta">            OptionalShaderType, \</span></span><br><span class="line"><span class="meta">            STRUCT_OFFSET(zzTThisStruct,MemberName), \</span></span><br><span class="line"><span class="meta">            EUniformBufferBaseType(BaseType), \</span></span><br><span class="line"><span class="meta">            Precision, \</span></span><br><span class="line"><span class="meta">            TypeInfo::NumRows, \</span></span><br><span class="line"><span class="meta">            TypeInfo::NumColumns, \</span></span><br><span class="line"><span class="meta">            TypeInfo::NumElements, \</span></span><br><span class="line"><span class="meta">            TypeInfo::GetStructMetadata() \</span></span><br><span class="line"><span class="meta">            )); \</span></span><br><span class="line"><span class="meta">         zzFuncPtr(*PrevFunc)(zzMemberId##MemberName, TArray<span class="string">&lt;FShaderParametersMetadata::FMember&gt;</span>*); \</span></span><br><span class="line"><span class="meta">         PrevFunc = zzAppendMemberGetPrev; \</span></span><br><span class="line"><span class="meta">         return (zzFuncPtr)PrevFunc; \</span></span><br><span class="line"><span class="meta">      &#125; \</span></span><br><span class="line"><span class="meta">      typedef zzNextMemberId##MemberName</span></span><br></pre></td></tr></table></figure>
+<p>这里上来就写zzMemberId##MemberName; <strong>承接了上面的typedef</strong></p>
+<p>合起来就是：typedef zzFirstMemberId zzMemberId##MemberName;</p>
+<p>看到这里也能猜到了，每个ShaderParameter之间都是靠这样的形式来把前后的参数链起来：具体做法是：</p>
+<p>Begin宏定义了一个<strong>结构体</strong>：</p>
+<p> struct zzFirstMemberId { enum { HasDeclaredResource = 0 }; }; </p>
+<p>第一个shader参数承接上文：声明了第一个<strong>结构体的变量</strong>：zzMemberId##MemberName</p>
+<p>接着定义第二个结构体：</p>
+<p>struct zzNextMemberId##MemberName { enum { HasDeclaredResource = zzMemberId##MemberName::HasDeclaredResource || !TypeInfo::bIsStoredInConstantBuffer }; };</p>
+<p>第二个结构体里的枚举值就是第一个结构体里的枚举值。（可能有点绕）</p>
+<p>依此类推。zzAppendMemberGetPrev定义一个静态函数。</p>
+<p>这个静态函数做了两件事：</p>
+<ol>
+<li>首先把当前的membe添加到TArray<FShaderParametersMetadata::FMember>* Members里去</FShaderParametersMetadata::FMember></li>
+<li>返回上一个成员的zzAppendMemberGetPrev函数（他们通过参数不同重载实现）</li>
+</ol>
+<h3 id="2-3-END-SHADER-PARAMETER-STRUCT-宏"><a href="#2-3-END-SHADER-PARAMETER-STRUCT-宏" class="headerlink" title="2.3.END_SHADER_PARAMETER_STRUCT 宏"></a>2.3.END_SHADER_PARAMETER_STRUCT 宏</h3><figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> END_SHADER_PARAMETER_STRUCT() \</span></span><br><span class="line"><span class="meta">      zzLastMemberId; \</span></span><br><span class="line"><span class="meta">   public: \</span></span><br><span class="line"><span class="meta">      static TArray<span class="string">&lt;FShaderParametersMetadata::FMember&gt;</span> zzGetMembers() &#123; \</span></span><br><span class="line"><span class="meta">         TArray<span class="string">&lt;FShaderParametersMetadata::FMember&gt;</span> Members; \</span></span><br><span class="line"><span class="meta">         zzFuncPtr(*LastFunc)(zzLastMemberId, TArray<span class="string">&lt;FShaderParametersMetadata::FMember&gt;</span>*); \</span></span><br><span class="line"><span class="meta">         LastFunc = zzAppendMemberGetPrev; \</span></span><br><span class="line"><span class="meta">         zzFuncPtr Ptr = (zzFuncPtr)LastFunc; \</span></span><br><span class="line"><span class="meta">         do \</span></span><br><span class="line"><span class="meta">         &#123; \</span></span><br><span class="line"><span class="meta">            Ptr = reinterpret_cast<span class="string">&lt;zzMemberFunc&gt;</span>(Ptr)(zzFirstMemberId(), &amp;Members); \</span></span><br><span class="line"><span class="meta">         &#125; while (Ptr); \</span></span><br><span class="line"><span class="meta">         Algo::Reverse(Members); \</span></span><br><span class="line"><span class="meta">         return Members; \</span></span><br><span class="line"><span class="meta">      &#125; \</span></span><br><span class="line"><span class="meta">   &#125; GCC_ALIGN(SHADER_PARAMETER_STRUCT_ALIGNMENT);</span></span><br></pre></td></tr></table></figure>
+<p>End宏主要做了两件事</p>
+<ol>
+<li>承接上面的typedef</li>
+<li>定义了一个静态函数，这个函数会依次执行上面的链路接口zzAppendMemberGetPrev，把shader参数都添加进Members变量中，最终返回Members数组。</li>
+</ol>
+<h3 id="2-4-SHADER-USE-PARAMETER-STRUCT"><a href="#2-4-SHADER-USE-PARAMETER-STRUCT" class="headerlink" title="2.4 SHADER_USE_PARAMETER_STRUCT"></a>2.4 SHADER_USE_PARAMETER_STRUCT</h3><h4 id="第一层define-1"><a href="#第一层define-1" class="headerlink" title="第一层define"></a>第一层define</h4><figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> SHADER_USE_PARAMETER_STRUCT(ShaderClass, ShaderParentClass) \</span></span><br><span class="line"><span class="meta">   SHADER_USE_PARAMETER_STRUCT_INTERNAL(ShaderClass, ShaderParentClass, true) \</span></span><br><span class="line"><span class="meta">   \</span></span><br><span class="line"><span class="meta">   static inline const FShaderParametersMetadata* GetRootParametersMetadata() &#123; return FParameters::FTypeInfo::GetStructMetadata(); &#125;</span></span><br></pre></td></tr></table></figure>
+<h4 id="第二层define-1"><a href="#第二层define-1" class="headerlink" title="第二层define"></a>第二层define</h4><figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> SHADER_USE_PARAMETER_STRUCT_INTERNAL(ShaderClass, ShaderParentClass, bShouldBindEverything) \</span></span><br><span class="line"><span class="meta">   ShaderClass(const ShaderMetaType::CompiledShaderInitializerType&amp; Initializer) \</span></span><br><span class="line"><span class="meta">      : ShaderParentClass(Initializer) \</span></span><br><span class="line"><span class="meta">   &#123; \</span></span><br><span class="line"><span class="meta">      BindForLegacyShaderParameters<span class="string">&lt;FParameters&gt;</span>(this, Initializer.PermutationId, Initializer.ParameterMap, bShouldBindEverything); \</span></span><br><span class="line"><span class="meta">   &#125; \</span></span><br><span class="line"><span class="meta">   \</span></span><br><span class="line"><span class="meta">   ShaderClass() \</span></span><br><span class="line"><span class="meta">   &#123; &#125; \</span></span><br></pre></td></tr></table></figure>
+<p>这里其实就是定义了一个构造函数，调用了BindForLegacyShaderParameters。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">template</span> &lt;<span class="keyword">typename</span> FParameterStruct&gt;</span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">BindForLegacyShaderParameters</span><span class="params">(FShader* Shader, int32 PermutationId, <span class="type">const</span> FShaderParameterMap&amp; ParameterMap, <span class="type">bool</span> bShouldBindEverything = <span class="literal">false</span>)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">   Shader-&gt;Bindings.<span class="built_in">BindForLegacyShaderParameters</span>(Shader, PermutationId, ParameterMap, *FParameterStruct::FTypeInfo::<span class="built_in">GetStructMetadata</span>(), bShouldBindEverything);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>可以看到BindForLegacyShaderParameters以<strong>FParameters的GetStructMetadata</strong>为参数。</p>
+<p>这个接口是不是很眼熟呢，定义的地方就是Begin宏的第四个参数里，而GetStructMetada的构造函数中，又包含了StructTypeName::zzGetMembers()。这样通过</p>
+<p><strong>SHADER_USE_PARAMETER_STRUCT-&gt;GetStructMetadata-&gt;zzGetMembers</strong> 的传递关系，最终把所有shader参数的信息都拿到了！BindForLegacyShaderParameters的使用我们放到第三节讲。</p>
+<h3 id="2-5-SHADER-PARAMETER-STRUCT-REF"><a href="#2-5-SHADER-PARAMETER-STRUCT-REF" class="headerlink" title="2.5 SHADER_PARAMETER_STRUCT_REF"></a>2.5 SHADER_PARAMETER_STRUCT_REF</h3><p>其他的Shader宏都大同小异，无非是模板参数不同，指向的资源不同，之所以再分析下这个宏是因为大部分shader参数都能在usf文件中找到对应的声明，但是这个宏声明的参数没找到，好奇心驱使看一下这个宏：</p>
+<p>这个是个引用shader参数，代表它实际上的声明并不在这里。比如第一节提到的：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">SHADER_PARAMETER_STRUCT_REF</span>(FForwardLightData, Forward)</span><br></pre></td></tr></table></figure>
+<p>变量声明实际为：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> FORWARD_GLOBAL_LIGHT_DATA_UNIFORM_BUFFER_MEMBER_TABLE \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER(uint32,NumLocalLights) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER(uint32, NumReflectionCaptures) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER(uint32, HasDirectionalLight) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER(uint32, NumGridCells) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER(FIntVector, CulledGridSize) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER(uint32, MaxCulledLightsPerCell) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER(uint32, LightGridPixelSizeShift) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER(FVector, LightGridZParams) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER(FVector, DirectionalLightDirection) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER(FVector, DirectionalLightColor) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER(float, DirectionalLightVolumetricScatteringIntensity) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER(uint32, DirectionalLightShadowMapChannelMask) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER(FVector2D, DirectionalLightDistanceFadeMAD) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER(uint32, NumDirectionalLightCascades) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER(FVector4, CascadeEndDepths) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER_ARRAY(FMatrix, DirectionalLightWorldToShadowMatrix, [GMaxForwardShadowCascades]) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER_ARRAY(FVector4, DirectionalLightShadowmapMinMax, [GMaxForwardShadowCascades]) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER(FVector4, DirectionalLightShadowmapAtlasBufferSize) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER(float, DirectionalLightDepthBias) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER(uint32, DirectionalLightUseStaticShadowing) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER(uint32, SimpleLightsEndIndex) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER(uint32, ClusteredDeferredSupportedEndIndex) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER(FVector4, DirectionalLightStaticShadowBufferSize) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER(FMatrix, DirectionalLightWorldToStaticShadow) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER_TEXTURE(Texture2D, DirectionalLightShadowmapAtlas) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER_SAMPLER(SamplerState, ShadowmapSampler) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER_TEXTURE(Texture2D, DirectionalLightStaticShadowmap) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER_SAMPLER(SamplerState, StaticShadowmapSampler) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER_SRV(StrongTypedBuffer<span class="string">&lt;float4&gt;</span>, ForwardLocalLightBuffer) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER_SRV(StrongTypedBuffer<span class="string">&lt;uint&gt;</span>, NumCulledLightsGrid) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER_SRV(StrongTypedBuffer<span class="string">&lt;uint&gt;</span>, CulledLightDataGrid) \</span></span><br><span class="line"><span class="meta">   SHADER_PARAMETER_TEXTURE(Texture2D, DummyRectLightSourceTexture)</span></span><br><span class="line"></span><br><span class="line"><span class="built_in">BEGIN_GLOBAL_SHADER_PARAMETER_STRUCT_WITH_CONSTRUCTOR</span>(FForwardLightData,)</span><br><span class="line">   <span class="function">FORWARD_GLOBAL_LIGHT_DATA_UNIFORM_BUFFER_MEMBER_TABLE</span></span><br><span class="line"><span class="function"><span class="title">END_GLOBAL_SHADER_PARAMETER_STRUCT</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span></span><br><span class="line"><span class="function"><span class="title">IMPLEMENT_GLOBAL_SHADER_PARAMETER_STRUCT</span><span class="params">(FForwardLightData, <span class="string">&quot;ForwardLightData&quot;</span>)</span></span>;</span><br></pre></td></tr></table></figure>
+<p>这里的宏结构展开和上面分析的差不多，区别是IMPLEMENT_GLOBAL_SHADER_PARAMETER_STRUCT会声明一个全局的静态变量，在Main函数之前初始化：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> IMPLEMENT_UNIFORM_BUFFER_STRUCT(StructTypeName,ShaderVariableName) \</span></span><br><span class="line"><span class="meta">   FShaderParametersMetadata StructTypeName::StaticStructMetadata( \</span></span><br><span class="line"><span class="meta">   FShaderParametersMetadata::EUseCase::UniformBuffer, \</span></span><br><span class="line"><span class="meta">   TEXT(#StructTypeName), \</span></span><br><span class="line"><span class="meta">   TEXT(#StructTypeName), \</span></span><br><span class="line"><span class="meta">   TEXT(ShaderVariableName), \</span></span><br><span class="line"><span class="meta">   nullptr, \</span></span><br><span class="line"><span class="meta">   sizeof(StructTypeName), \</span></span><br><span class="line"><span class="meta">   StructTypeName::zzGetMembers())</span></span><br></pre></td></tr></table></figure>
+<p>初始化的时候会调用到上面分析过的zzGetMembers函数，把shader参数信息全部收集起来，然后调用FShaderParametersMetadata的构造函数</p>
+<p><img src="https://lilithgames.feishu.cn/space/api/box/stream/download/asynccode/?code=NTIxYzdjZTJjMjJmNjM1OWU3ZTczZGIxYThhMTg3MGFfMmRheHhHYmRGSFpZVFZZTWFkckR1TUJiUTdpOTQyQ0ZfVG9rZW46UkluMWJZa3RXb0xjUnR4cjhkaWNuT1ZCbnZjXzE3NDU0ODI1NzM6MTc0NTQ4NjE3M19WNA" alt="img"></p>
+<p>如果是uniformbuffer数据的话，然后把FShaderParametersMetadata链到全局的一个链表上去。</p>
+<h2 id="3-参数代码检查"><a href="#3-参数代码检查" class="headerlink" title="3.参数代码检查"></a>3.参数代码检查</h2><p>在shader编译完成后，会调用Shader的构造函数，做两件事</p>
+<ul>
+<li>调用父类的构造</li>
+<li>调用BindForLegacyShaderParameters</li>
+</ul>
+<p>Shader需要的参数会被存储在编译结果FShaderCompilerOutput::ParameterMap，这样在构造函数中，就可以做绑定。对于没有定义SHADER_USE_PARAMETER_STRUCT宏的Shader，需要手动声明构造函数，这些Shader有的会手动做参数的绑定，这里的绑定只是做了代码检查，即C++侧的参数，是否真的在Shader中被定义了，如果存在就把ParameterMap中对应的ParameterMap的bBound设为true，方便在后续真正传参。以MobileBasePassPS举例：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="built_in">TMobileBasePassPSPolicyParamType</span>(<span class="type">const</span> FMeshMaterialShaderType::CompiledShaderInitializerType&amp; Initializer)</span><br><span class="line">    : <span class="built_in">FMeshMaterialShader</span>(Initializer)</span><br><span class="line">&#123;</span><br><span class="line">    LightMapPolicyType::PixelParametersType::<span class="built_in">Bind</span>(Initializer.ParameterMap);</span><br><span class="line">    PassUniformBuffer.<span class="built_in">Bind</span>(Initializer.ParameterMap, FMobileBasePassUniformParameters::StaticStructMetadata.<span class="built_in">GetShaderVariableName</span>());</span><br><span class="line">    </span><br><span class="line">    MobileDirectionLightBufferParam.<span class="built_in">Bind</span>(Initializer.ParameterMap, FMobileDirectionalLightShaderParameters::StaticStructMetadata.<span class="built_in">GetShaderVariableName</span>());</span><br><span class="line">    ReflectionParameter.<span class="built_in">Bind</span>(Initializer.ParameterMap, FMobileReflectionCaptureShaderParameters::StaticStructMetadata.<span class="built_in">GetShaderVariableName</span>());</span><br><span class="line"></span><br><span class="line">    HQReflectionCubemaps[<span class="number">0</span>].<span class="built_in">Bind</span>(Initializer.ParameterMap, <span class="built_in">TEXT</span>(<span class="string">&quot;ReflectionCubemap0&quot;</span>));</span><br><span class="line">    HQReflectionSamplers[<span class="number">0</span>].<span class="built_in">Bind</span>(Initializer.ParameterMap, <span class="built_in">TEXT</span>(<span class="string">&quot;ReflectionCubemapSampler0&quot;</span>));</span><br><span class="line">    HQReflectionCubemaps[<span class="number">1</span>].<span class="built_in">Bind</span>(Initializer.ParameterMap, <span class="built_in">TEXT</span>(<span class="string">&quot;ReflectionCubemap1&quot;</span>));</span><br><span class="line">    HQReflectionSamplers[<span class="number">1</span>].<span class="built_in">Bind</span>(Initializer.ParameterMap, <span class="built_in">TEXT</span>(<span class="string">&quot;ReflectionCubemapSampler1&quot;</span>));</span><br><span class="line">    HQReflectionCubemaps[<span class="number">2</span>].<span class="built_in">Bind</span>(Initializer.ParameterMap, <span class="built_in">TEXT</span>(<span class="string">&quot;ReflectionCubemap2&quot;</span>));</span><br><span class="line">    HQReflectionSamplers[<span class="number">2</span>].<span class="built_in">Bind</span>(Initializer.ParameterMap, <span class="built_in">TEXT</span>(<span class="string">&quot;ReflectionCubemapSampler2&quot;</span>));</span><br><span class="line">    HQReflectionInvAverageBrigtnessParams.<span class="built_in">Bind</span>(Initializer.ParameterMap, <span class="built_in">TEXT</span>(<span class="string">&quot;ReflectionAverageBrigtness&quot;</span>));</span><br><span class="line">    HQReflectanceMaxValueRGBMParams.<span class="built_in">Bind</span>(Initializer.ParameterMap, <span class="built_in">TEXT</span>(<span class="string">&quot;ReflectanceMaxValueRGBM&quot;</span>));</span><br><span class="line">    HQReflectionPositionsAndRadii.<span class="built_in">Bind</span>(Initializer.ParameterMap, <span class="built_in">TEXT</span>(<span class="string">&quot;ReflectionPositionsAndRadii&quot;</span>));</span><br><span class="line">    HQReflectionCaptureBoxTransformArray.<span class="built_in">Bind</span>(Initializer.ParameterMap, <span class="built_in">TEXT</span>(<span class="string">&quot;CaptureBoxTransformArray&quot;</span>));</span><br><span class="line">    HQReflectionCaptureBoxScalesArray.<span class="built_in">Bind</span>(Initializer.ParameterMap, <span class="built_in">TEXT</span>(<span class="string">&quot;CaptureBoxScalesArray&quot;</span>));</span><br><span class="line"></span><br><span class="line">    NumDynamicPointLightsParameter.<span class="built_in">Bind</span>(Initializer.ParameterMap, <span class="built_in">TEXT</span>(<span class="string">&quot;NumDynamicPointLights&quot;</span>));</span><br><span class="line">                </span><br><span class="line">    CSMDebugHintParams.<span class="built_in">Bind</span>(Initializer.ParameterMap, <span class="built_in">TEXT</span>(<span class="string">&quot;CSMDebugHint&quot;</span>));</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">FShaderUniformBufferParameter::Bind</span><span class="params">(<span class="type">const</span> FShaderParameterMap&amp; ParameterMap,<span class="type">const</span> TCHAR* ParameterName,EShaderParameterFlags Flags)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	uint16 UnusedBaseIndex = <span class="number">0</span>;</span><br><span class="line">	uint16 UnusedNumBytes = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span>(!ParameterMap.<span class="built_in">FindParameterAllocation</span>(ParameterName,BaseIndex,UnusedBaseIndex,UnusedNumBytes))<span class="comment">//设置bBound</span></span><br><span class="line">	&#123;</span><br><span class="line">		BaseIndex = <span class="number">0xffff</span>;</span><br><span class="line">		<span class="keyword">if</span>(Flags == SPF_Mandatory)</span><br><span class="line">		&#123;</span><br><span class="line">			<span class="keyword">if</span> (!<span class="built_in">UE_LOG_ACTIVE</span>(LogShaders, Log))</span><br><span class="line">			&#123;</span><br><span class="line">				<span class="built_in">UE_LOG</span>(LogShaders, Fatal,<span class="built_in">TEXT</span>(<span class="string">&quot;Failure to bind non-optional shader resource parameter %s!  The parameter is either not present in the shader, or the shader compiler optimized it out.&quot;</span>),ParameterName);</span><br><span class="line">			&#125;</span><br><span class="line">			<span class="keyword">else</span></span><br><span class="line">			&#123;</span><br><span class="line">				<span class="comment">// We use a non-Slate message box to avoid problem where we haven&#x27;t compiled the shaders for Slate.</span></span><br><span class="line">				FPlatformMisc::<span class="built_in">MessageBoxExt</span>( EAppMsgType::Ok, *FText::<span class="built_in">Format</span>(</span><br><span class="line">					<span class="built_in">NSLOCTEXT</span>(<span class="string">&quot;UnrealEd&quot;</span>, <span class="string">&quot;Error_FailedToBindShaderParameter&quot;</span>, <span class="string">&quot;Failure to bind non-optional shader parameter &#123;0&#125;! The parameter is either not present in the shader, or the shader compiler optimized it out. This will be an assert with LogShaders suppressed!&quot;</span>),</span><br><span class="line">					FText::<span class="built_in">FromString</span>(ParameterName)).<span class="built_in">ToString</span>(), <span class="built_in">TEXT</span>(<span class="string">&quot;Warning&quot;</span>));</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">else</span></span><br><span class="line">	&#123;</span><br><span class="line">		<span class="built_in">check</span>(<span class="built_in">IsBound</span>());</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>对于声明了宏的函数，就不需要那么麻烦，会在构造函数中直接调用BindForLegacyShaderParameters接下来我们看下Bind的是怎么用MetaData的。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">FShaderParameterBindings::BindForLegacyShaderParameters</span><span class="params">(<span class="type">const</span> FShader* Shader, int32 PermutationId, <span class="type">const</span> FShaderParameterMap&amp; ParametersMap, <span class="type">const</span> FShaderParametersMetadata&amp; StructMetaData, <span class="type">bool</span> bShouldBindEverything)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">   <span class="type">const</span> FShaderType* Type = Shader-&gt;<span class="built_in">GetTypeUnfrozen</span>();</span><br><span class="line">   <span class="built_in">checkf</span>(StructMetaData.<span class="built_in">GetSize</span>() &lt; (<span class="number">1</span> &lt;&lt; (<span class="built_in">sizeof</span>(uint16) * <span class="number">8</span>)), <span class="built_in">TEXT</span>(<span class="string">&quot;Shader parameter structure can only have a size &lt; 65536 bytes.&quot;</span>));</span><br><span class="line">   <span class="built_in">check</span>(<span class="keyword">this</span> == &amp;Shader-&gt;Bindings);</span><br><span class="line">   </span><br><span class="line">   <span class="keyword">switch</span> (Type-&gt;<span class="built_in">GetFrequency</span>())</span><br><span class="line">   &#123;</span><br><span class="line">   <span class="keyword">case</span> SF_Vertex:</span><br><span class="line">   <span class="keyword">case</span> SF_Hull:</span><br><span class="line">   <span class="keyword">case</span> SF_Domain:</span><br><span class="line">   <span class="keyword">case</span> SF_Pixel:</span><br><span class="line">   <span class="keyword">case</span> SF_Geometry:</span><br><span class="line">   <span class="keyword">case</span> SF_Compute:</span><br><span class="line">      <span class="keyword">break</span>;</span><br><span class="line">   <span class="keyword">default</span>:</span><br><span class="line">      <span class="built_in">checkf</span>(<span class="number">0</span>, <span class="built_in">TEXT</span>(<span class="string">&quot;Invalid shader frequency for this shader binding technique.&quot;</span>));</span><br><span class="line">      <span class="keyword">break</span>;</span><br><span class="line">   &#125;</span><br><span class="line"></span><br><span class="line">   FShaderParameterStructBindingContext BindingContext;</span><br><span class="line">   BindingContext.Shader = Shader;</span><br><span class="line">   BindingContext.PermutationId = PermutationId;</span><br><span class="line">   BindingContext.Bindings = <span class="keyword">this</span>;</span><br><span class="line">   BindingContext.ParametersMap = &amp;ParametersMap;</span><br><span class="line">   BindingContext.bUseRootShaderParameters = <span class="literal">false</span>;</span><br><span class="line">   BindingContext.<span class="built_in">Bind</span>(</span><br><span class="line">      StructMetaData,</span><br><span class="line">      <span class="comment">/* MemberPrefix = */</span> <span class="built_in">TEXT</span>(<span class="string">&quot;&quot;</span>),</span><br><span class="line">      <span class="comment">/* ByteOffset = */</span> <span class="number">0</span>);</span><br><span class="line"></span><br><span class="line">   StructureLayoutHash = StructMetaData.<span class="built_in">GetLayoutHash</span>();</span><br><span class="line">   RootParameterBufferIndex = kInvalidBufferIndex;</span><br><span class="line"></span><br><span class="line">   TArray&lt;FString&gt; AllParameterNames;</span><br><span class="line">   ParametersMap.<span class="built_in">GetAllParameterNames</span>(AllParameterNames);</span><br><span class="line">   <span class="keyword">if</span> (bShouldBindEverything &amp;&amp; BindingContext.ShaderGlobalScopeBindings.<span class="built_in">Num</span>() != AllParameterNames.<span class="built_in">Num</span>())</span><br><span class="line">   &#123;</span><br><span class="line">      FString ErrorString = FString::<span class="built_in">Printf</span>(</span><br><span class="line">         <span class="built_in">TEXT</span>(<span class="string">&quot;Shader %s, permutation %d has unbound parameters not represented in the parameter struct:&quot;</span>), Type-&gt;<span class="built_in">GetName</span>(), PermutationId);</span><br><span class="line"></span><br><span class="line">      <span class="keyword">for</span> (<span class="type">const</span> FString&amp; GlobalParameterName : AllParameterNames)</span><br><span class="line">      &#123;</span><br><span class="line">         <span class="keyword">if</span> (!BindingContext.ShaderGlobalScopeBindings.<span class="built_in">Contains</span>(GlobalParameterName))</span><br><span class="line">         &#123;</span><br><span class="line">            ErrorString += FString::<span class="built_in">Printf</span>(<span class="built_in">TEXT</span>(<span class="string">&quot;\n  %s&quot;</span>), *GlobalParameterName);</span><br><span class="line">         &#125;</span><br><span class="line">      &#125;</span><br><span class="line"></span><br><span class="line">      <span class="built_in">UE_LOG</span>(LogShaders, Fatal, <span class="built_in">TEXT</span>(<span class="string">&quot;%s&quot;</span>), *ErrorString);</span><br><span class="line">   &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>最终就是通过上面收集到的TArray<FShaderParametersMetadata::FMember>包含的类型信息做处理，分别把参数添加到FShaderParameterBindings对应的成员中。与Shader中定义的参数做对照检查，其实和上面手动绑定的效果类似，不过更全面。</FShaderParametersMetadata::FMember></p>
+<h2 id="4-Shader参数绑定"><a href="#4-Shader参数绑定" class="headerlink" title="4. Shader参数绑定"></a>4. Shader参数绑定</h2><p>现在我们已经成功编译好了Shader，并且确认C++侧和Shader侧两边的定义是吻合的，我们需要搭起两边的桥梁。</p>
+<p>对于GlobalShader因为没有BuildMeshCommands流程，所以需要手动调用Shader的SetParameters设置C++参数值。以Texture参数举例分析SetParameters：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">SetParameters</span><span class="params">(FRHICommandList&amp; RHICmdList, <span class="type">const</span> FTexture* NormalMapTexture)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	FRHIPixelShader* PixelShaderRHI = RHICmdList.<span class="built_in">GetBoundPixelShader</span>();</span><br><span class="line">	<span class="built_in">SetTextureParameter</span>(RHICmdList, PixelShaderRHI,Texture,TextureSampler,NormalMapTexture);</span><br><span class="line">&#125;</span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">FOpenGLDynamicRHI::InternalSetShaderTexture</span><span class="params">(FOpenGLTextureBase* Texture, FOpenGLShaderResourceView* SRV, GLint TextureIndex, GLenum Target, GLuint Resource, <span class="type">int</span> NumMips, <span class="type">int</span> LimitMip)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	<span class="keyword">auto</span>&amp; PendingTextureState = PendingState.Textures[TextureIndex];</span><br><span class="line">	PendingTextureState.Texture = Texture;</span><br><span class="line">	PendingTextureState.SRV = SRV;</span><br><span class="line">	PendingTextureState.Target = Target;</span><br><span class="line">	PendingTextureState.Resource = Resource;</span><br><span class="line">	PendingTextureState.LimitMip = LimitMip;</span><br><span class="line">	PendingTextureState.bHasMips = (NumMips == <span class="number">0</span> || NumMips &gt; <span class="number">1</span>);</span><br><span class="line">	PendingTextureState.NumMips = NumMips;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>最终调用到DynamicRHI接口层，把参数赋值给PendingState。</p>
+<p>对于MaterialShader，会在BuildMeshCommands调用GetShaderBinding，调用绑定，把绑定关系存储在MeshDrawCommands中，在SubmitDraw执行真正绑定，也就是调用上面手动binding的接口。</p>
+<p>最终在DrawPrimitive中将PendingState的数据调用API传给GPU，下面是Texture最终调用API的调用。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">template</span> &lt;<span class="keyword">typename</span> StateType&gt;</span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">FOpenGLDynamicRHI::SetupTexturesForDraw</span><span class="params">( FOpenGLContextState&amp; ContextState, <span class="type">const</span> StateType&amp; ShaderState, int32 MaxTexturesNeeded )</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="built_in">VERIFY_GL_SCOPE</span>();</span><br><span class="line">    <span class="built_in">SCOPE_CYCLE_COUNTER_DETAILED</span>(STAT_OpenGLTextureBindTime);</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// Skip texture setup when running bindless texture, it is done with program setup</span></span><br><span class="line">    <span class="keyword">if</span> (FOpenGL::<span class="built_in">SupportsBindlessTexture</span>() &amp;&amp; OpenGLConsoleVariables::bBindlessTexture)</span><br><span class="line">    &#123;</span><br><span class="line">       <span class="keyword">return</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    int32 MaxProgramTexture = <span class="number">0</span>;</span><br><span class="line">    <span class="type">const</span> TBitArray&lt;&gt;&amp; NeededBits = ShaderState-&gt;<span class="built_in">GetTextureNeeds</span>(MaxProgramTexture);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span>( int32 TextureStageIndex = <span class="number">0</span>; TextureStageIndex &lt;= MaxProgramTexture; ++TextureStageIndex )</span><br><span class="line">    &#123;</span><br><span class="line">       <span class="keyword">if</span> (!NeededBits[TextureStageIndex])</span><br><span class="line">       &#123;</span><br><span class="line">          <span class="comment">// Current program doesn&#x27;t make use of this texture stage. No matter what UE4 wants to have on in,</span></span><br><span class="line">          <span class="comment">// it won&#x27;t be useful for this draw, so telling OpenGL we don&#x27;t really need it to give the driver</span></span><br><span class="line">          <span class="comment">// more leeway in memory management, and avoid false alarms about same texture being set on</span></span><br><span class="line">          <span class="comment">// texture stage and in framebuffer.</span></span><br><span class="line">          <span class="built_in">CachedSetupTextureStage</span>( ContextState, TextureStageIndex, GL_NONE, <span class="number">0</span>, <span class="number">-1</span>, <span class="number">1</span> );</span><br><span class="line">       &#125;</span><br><span class="line">       <span class="keyword">else</span></span><br><span class="line">       &#123;</span><br><span class="line">          <span class="type">const</span> FTextureStage&amp; TextureStage = PendingState.Textures[TextureStageIndex];</span><br><span class="line">          </span><br><span class="line"><span class="meta">#<span class="keyword">if</span> UE_BUILD_DEBUG</span></span><br><span class="line">          <span class="comment">// Use the texture SRV&#x27;s LimitMip value to specify the mip available for sampling</span></span><br><span class="line">          <span class="comment">// This requires SupportsTextureBaseLevel &amp; is a fallback for SupportsTextureView</span></span><br><span class="line">          <span class="comment">// which should be preferred.</span></span><br><span class="line">          <span class="keyword">if</span>(!FOpenGL::<span class="built_in">SupportsTextureView</span>())</span><br><span class="line">          &#123;</span><br><span class="line">             <span class="comment">// When trying to limit the mip available for sampling (as part of texture SRV)</span></span><br><span class="line">             <span class="comment">// ensure that the texture is bound to only one sampler, or that all samplers</span></span><br><span class="line">             <span class="comment">// share the same restriction.</span></span><br><span class="line">             <span class="keyword">if</span>(TextureStage.LimitMip != <span class="number">-1</span>)</span><br><span class="line">             &#123;</span><br><span class="line">                <span class="keyword">for</span>( int32 TexIndex = <span class="number">0</span>; TexIndex &lt;= MaxProgramTexture; ++TexIndex )</span><br><span class="line">                &#123;</span><br><span class="line">                   <span class="keyword">if</span>(TexIndex != TextureStageIndex &amp;&amp; ShaderState-&gt;<span class="built_in">NeedsTextureStage</span>(TexIndex))</span><br><span class="line">                   &#123;</span><br><span class="line">                      <span class="type">const</span> FTextureStage&amp; OtherStage = PendingState.Textures[TexIndex];</span><br><span class="line">                      <span class="type">const</span> <span class="type">bool</span> bSameResource = OtherStage.Resource == TextureStage.Resource;</span><br><span class="line">                      <span class="type">const</span> <span class="type">bool</span> bSameTarget = OtherStage.Target == TextureStage.Target;</span><br><span class="line">                      <span class="type">const</span> GLint TextureStageBaseMip = TextureStage.LimitMip == <span class="number">-1</span> ? <span class="number">0</span> : TextureStage.LimitMip;</span><br><span class="line">                      <span class="type">const</span> GLint OtherStageBaseMip = OtherStage.LimitMip == <span class="number">-1</span> ? <span class="number">0</span> : OtherStage.LimitMip;</span><br><span class="line">                      <span class="type">const</span> <span class="type">bool</span> bSameLimitMip = TextureStageBaseMip == OtherStageBaseMip;</span><br><span class="line">                      <span class="type">const</span> GLint TextureStageMaxMip = TextureStage.LimitMip == <span class="number">-1</span> ? TextureStage.NumMips - <span class="number">1</span> : TextureStage.LimitMip;</span><br><span class="line">                      <span class="type">const</span> GLint OtherStageMaxMip = OtherStage.LimitMip == <span class="number">-1</span> ? OtherStage.NumMips - <span class="number">1</span> : OtherStage.LimitMip;</span><br><span class="line">                      <span class="type">const</span> <span class="type">bool</span> bSameMaxMip = TextureStageMaxMip == OtherStageMaxMip;</span><br><span class="line">                      <span class="keyword">if</span>( bSameTarget &amp;&amp; bSameResource &amp;&amp; !bSameLimitMip &amp;&amp; !bSameMaxMip )</span><br><span class="line">                      &#123;</span><br><span class="line">                         <span class="built_in">UE_LOG</span>(LogRHI, Warning, <span class="built_in">TEXT</span>(<span class="string">&quot;Texture SRV fallback requires that each texture SRV be bound with the same mip-range restrictions. Expect rendering errors.&quot;</span>));</span><br><span class="line">                      &#125;</span><br><span class="line">                   &#125;</span><br><span class="line">                &#125;</span><br><span class="line">             &#125;</span><br><span class="line">          &#125;</span><br><span class="line"><span class="meta">#<span class="keyword">endif</span></span></span><br><span class="line">          <span class="built_in">CachedSetupTextureStage</span>( ContextState, TextureStageIndex, TextureStage.Target, TextureStage.Resource, TextureStage.LimitMip, TextureStage.NumMips );</span><br><span class="line">          </span><br><span class="line">          <span class="type">bool</span> bExternalTexture = (TextureStage.Target == GL_TEXTURE_EXTERNAL_OES);</span><br><span class="line">          <span class="keyword">if</span> (!bExternalTexture)</span><br><span class="line">          &#123;</span><br><span class="line">             FOpenGLSamplerState* PendingSampler = PendingState.SamplerStates[TextureStageIndex];</span><br><span class="line">          </span><br><span class="line">             <span class="keyword">if</span> (ContextState.SamplerStates[TextureStageIndex] != PendingSampler)</span><br><span class="line">             &#123;</span><br><span class="line">                FOpenGL::<span class="built_in">BindSampler</span>(TextureStageIndex, PendingSampler ? PendingSampler-&gt;Resource : <span class="number">0</span>);</span><br><span class="line">                ContextState.SamplerStates[TextureStageIndex] = PendingSampler;</span><br><span class="line">             &#125;</span><br><span class="line">          &#125;</span><br><span class="line">          <span class="keyword">else</span> <span class="keyword">if</span> (TextureStage.Target != GL_TEXTURE_BUFFER)</span><br><span class="line">          &#123;</span><br><span class="line">             FOpenGL::<span class="built_in">BindSampler</span>(TextureStageIndex, <span class="number">0</span>);</span><br><span class="line">             ContextState.SamplerStates[TextureStageIndex] = <span class="literal">nullptr</span>;</span><br><span class="line">             <span class="built_in">ApplyTextureStage</span>( ContextState, TextureStageIndex, TextureStage, PendingState.SamplerStates[TextureStageIndex] );</span><br><span class="line">          &#125;</span><br><span class="line">       &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// For now, continue to clear unused stages</span></span><br><span class="line">    <span class="keyword">for</span>( int32 TextureStageIndex = MaxProgramTexture + <span class="number">1</span>; TextureStageIndex &lt; MaxTexturesNeeded; ++TextureStageIndex )</span><br><span class="line">    &#123;</span><br><span class="line">       <span class="built_in">CachedSetupTextureStage</span>( ContextState, TextureStageIndex, GL_NONE, <span class="number">0</span>, <span class="number">-1</span>, <span class="number">1</span> );</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="5-UE的一些通用参数"><a href="#5-UE的一些通用参数" class="headerlink" title="5. UE的一些通用参数"></a>5. UE的一些通用参数</h2><p>ViewUniformBuffer，里面包含了非常多的公共参数，是通过FMeshPassProcessor保存，最终在BuildMeshDrawCommands中汇入上面的流程，在父类FMeshMaterialShader::GetShaderBinding中添加参数绑定。</p>
+<p>但是ViewUniformBuffer里定义的参数，在Shader侧完全找不到定义，原因是这样的GlobalShader会通过宏定义</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">IMPLEMENT_GLOBAL_SHADER_PARAMETER_STRUCT</span>(FViewUniformShaderParameters, <span class="string">&quot;View&quot;</span>);</span><br></pre></td></tr></table></figure>
+<p>在shader编译的时候，通过一系列的字符串匹配操作，在编译的HLSL中插入在C++侧定义的Shader参数定义，但是我们在usf/ush中是找不到的。</p>
+<h3 id="参考"><a href="#参考" class="headerlink" title="参考"></a>参考</h3><p><a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/669325070">https://zhuanlan.zhihu.com/p/669325070</a></p>
+<p><a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/66288908">https://zhuanlan.zhihu.com/p/66288908</a></p>
+<p><a target="_blank" rel="noopener" href="https://cloud.tencent.com/developer/article/2238861">https://cloud.tencent.com/developer/article/2238861</a></p>
+<p><a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/485239547">https://zhuanlan.zhihu.com/p/485239547</a></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2025/03/26/UELandScape/" rel="prev" title="UE LandScape">
+      <i class="fa fa-chevron-left"></i> UE LandScape
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#UE-ShaderParameter"><span class="nav-number">1.</span> <span class="nav-text">UE ShaderParameter</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Shader%E4%BF%A1%E6%81%AF%E6%94%B6%E9%9B%86-amp-%E7%BC%96%E8%AF%91"><span class="nav-number">1.1.</span> <span class="nav-text">1. Shader信息收集&amp;编译</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-%E5%8F%82%E6%95%B0%E5%AE%9A%E4%B9%89"><span class="nav-number">1.2.</span> <span class="nav-text">2. 参数定义</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#shader%E5%8F%82%E6%95%B0%E5%AE%8F%E5%88%86%E6%9E%90"><span class="nav-number">1.2.1.</span> <span class="nav-text">shader参数宏分析</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-BEGIN-SHADER-PARAMETER-STRUCT"><span class="nav-number">1.2.2.</span> <span class="nav-text">2.1 BEGIN_SHADER_PARAMETER_STRUCT</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AC%AC%E4%B8%80%E5%B1%82Define"><span class="nav-number">1.2.2.1.</span> <span class="nav-text">第一层Define:</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AC%AC%E4%BA%8C%E5%B1%82Define"><span class="nav-number">1.2.2.2.</span> <span class="nav-text">第二层Define</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AC%AC%E5%9B%9B%E4%B8%AA%E5%8F%82%E6%95%B0"><span class="nav-number">1.2.2.3.</span> <span class="nav-text">第四个参数</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AC%AC%E4%BA%94%E4%B8%AA%E5%8F%82%E6%95%B0"><span class="nav-number">1.2.2.4.</span> <span class="nav-text">第五个参数</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-SHADER-PARAMETER"><span class="nav-number">1.2.3.</span> <span class="nav-text">2.2 SHADER_PARAMETER</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AC%AC%E4%B8%80%E5%B1%82define"><span class="nav-number">1.2.3.1.</span> <span class="nav-text">第一层define</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AC%AC%E4%BA%8C%E5%B1%82define"><span class="nav-number">1.2.3.2.</span> <span class="nav-text">第二层define</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AC%AC%E4%B8%89%E5%B1%82define"><span class="nav-number">1.2.3.3.</span> <span class="nav-text">第三层define</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-END-SHADER-PARAMETER-STRUCT-%E5%AE%8F"><span class="nav-number">1.2.4.</span> <span class="nav-text">2.3.END_SHADER_PARAMETER_STRUCT 宏</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-SHADER-USE-PARAMETER-STRUCT"><span class="nav-number">1.2.5.</span> <span class="nav-text">2.4 SHADER_USE_PARAMETER_STRUCT</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AC%AC%E4%B8%80%E5%B1%82define-1"><span class="nav-number">1.2.5.1.</span> <span class="nav-text">第一层define</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AC%AC%E4%BA%8C%E5%B1%82define-1"><span class="nav-number">1.2.5.2.</span> <span class="nav-text">第二层define</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-SHADER-PARAMETER-STRUCT-REF"><span class="nav-number">1.2.6.</span> <span class="nav-text">2.5 SHADER_PARAMETER_STRUCT_REF</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-%E5%8F%82%E6%95%B0%E4%BB%A3%E7%A0%81%E6%A3%80%E6%9F%A5"><span class="nav-number">1.3.</span> <span class="nav-text">3.参数代码检查</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-Shader%E5%8F%82%E6%95%B0%E7%BB%91%E5%AE%9A"><span class="nav-number">1.4.</span> <span class="nav-text">4. Shader参数绑定</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-UE%E7%9A%84%E4%B8%80%E4%BA%9B%E9%80%9A%E7%94%A8%E5%8F%82%E6%95%B0"><span class="nav-number">1.5.</span> <span class="nav-text">5. UE的一些通用参数</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%82%E8%80%83"><span class="nav-number">1.5.1.</span> <span class="nav-text">参考</span></a></li></ol></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Ritchie"
+      src="/images/avatar.jpg">
+  <p class="site-author-name" itemprop="name">Ritchie</p>
+  <div class="site-description" itemprop="description">Engine/Graphics 爱好者 做人没有梦想,那和咸鱼有什么区别</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">14</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">2</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2025</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Ritchie</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-area"></i>
+    </span>
+      <span class="post-meta-item-text">站点总字数：</span>
+    <span title="站点总字数">27k</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+      <span class="post-meta-item-text">站点阅读时长 &asymp;</span>
+    <span title="站点阅读时长">1:40</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js"></script>
+  <script src="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+
+<script>
+  if (typeof MathJax === 'undefined') {
+    window.MathJax = {
+      loader: {
+        source: {
+          '[tex]/amsCd': '[tex]/amscd',
+          '[tex]/AMScd': '[tex]/amscd'
+        }
+      },
+      tex: {
+        inlineMath: {'[+]': [['$', '$']]},
+        tags: 'ams'
+      },
+      options: {
+        renderActions: {
+          findScript: [10, doc => {
+            document.querySelectorAll('script[type^="math/tex"]').forEach(node => {
+              const display = !!node.type.match(/; *mode=display/);
+              const math = new doc.options.MathItem(node.textContent, doc.inputJax[0], display);
+              const text = document.createTextNode('');
+              node.parentNode.replaceChild(text, node);
+              math.start = {node: text, delim: '', n: 0};
+              math.end = {node: text, delim: '', n: 0};
+              doc.math.push(math);
+            });
+          }, '', false],
+          insertedScript: [200, () => {
+            document.querySelectorAll('mjx-container').forEach(node => {
+              let target = node.parentNode;
+              if (target.nodeName.toLowerCase() === 'li') {
+                target.parentNode.classList.add('has-jax');
+              }
+            });
+          }, '', false]
+        }
+      }
+    };
+    (function () {
+      var script = document.createElement('script');
+      script.src = '//cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js';
+      script.defer = true;
+      document.head.appendChild(script);
+    })();
+  } else {
+    MathJax.startup.document.state(0);
+    MathJax.texReset();
+    MathJax.typeset();
+  }
+</script>
+
+    
+
+  
+
+</body>
+</html>

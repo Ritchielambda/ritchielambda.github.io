@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 7.1.1">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"ritchielambda.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":true,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="UE渲染工作流(一)——数据篇​    UE的渲染工作流基于原生API做了非常多的优化和封装，需要经常查阅和回顾这些工作流和数据结构，才能理解其中的奥妙。本篇内容要讨论的是数据准备篇，主要包含一个StaticMesh被放入场景中后，它的渲染数据是如何被整理应用的。注意：本篇只讲UE的部分工作流程，对于其中某个模块的具体算法实现细节不会不过解读，需要额外查阅资料，如果有时间，笔者会尽量记录在之后的文">
+<meta property="og:type" content="article">
+<meta property="og:title" content="UE渲染工作流(一)——数据篇">
+<meta property="og:url" content="https://ritchielambda.github.io/2024/06/18/renderworkflow_data/index.html">
+<meta property="og:site_name" content="Ritchie&#39;s Blog">
+<meta property="og:description" content="UE渲染工作流(一)——数据篇​    UE的渲染工作流基于原生API做了非常多的优化和封装，需要经常查阅和回顾这些工作流和数据结构，才能理解其中的奥妙。本篇内容要讨论的是数据准备篇，主要包含一个StaticMesh被放入场景中后，它的渲染数据是如何被整理应用的。注意：本篇只讲UE的部分工作流程，对于其中某个模块的具体算法实现细节不会不过解读，需要额外查阅资料，如果有时间，笔者会尽量记录在之后的文">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://ritchielambda.github.io/2024/06/18/renderworkflow_data/workflow_addstaticmesh.png">
+<meta property="article:published_time" content="2024-06-18T19:47:53.000Z">
+<meta property="article:modified_time" content="2025-06-30T15:40:06.408Z">
+<meta property="article:author" content="Ritchie">
+<meta property="article:tag" content="UE源码">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://ritchielambda.github.io/2024/06/18/renderworkflow_data/workflow_addstaticmesh.png">
+
+<link rel="canonical" href="https://ritchielambda.github.io/2024/06/18/renderworkflow_data/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>UE渲染工作流(一)——数据篇 | Ritchie's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+<link rel="alternate" href="/atom.xml" title="Ritchie's Blog" type="application/atom+xml">
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Ritchie's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://ritchielambda.github.io/2024/06/18/renderworkflow_data/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpg">
+      <meta itemprop="name" content="Ritchie">
+      <meta itemprop="description" content="Engine/Graphics 爱好者 做人没有梦想,那和咸鱼有什么区别">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Ritchie's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          UE渲染工作流(一)——数据篇
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2024-06-18 19:47:53" itemprop="dateCreated datePublished" datetime="2024-06-18T19:47:53+00:00">2024-06-18</time>
+            </span>
+
+          
+            <span class="post-meta-item" title="本文字数">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+              <span>2.3k</span>
+            </span>
+            <span class="post-meta-item" title="阅读时长">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+              <span>8 分钟</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="UE渲染工作流-一-——数据篇"><a href="#UE渲染工作流-一-——数据篇" class="headerlink" title="UE渲染工作流(一)——数据篇"></a>UE渲染工作流(一)——数据篇</h1><p>​    UE的渲染工作流基于原生API做了非常多的优化和封装，需要经常查阅和回顾这些工作流和数据结构，才能理解其中的奥妙。本篇内容要讨论的是数据准备篇，主要包含一个StaticMesh被放入场景中后，它的渲染数据是如何被整理应用的。注意：本篇只讲UE的部分工作流程，对于其中某个模块的具体算法实现细节不会不过解读，需要额外查阅资料，如果有时间，笔者会尽量记录在之后的文章中。</p>
+<span id="more"></span>
+<h2 id="StaticMesh-gt-SceneProxy"><a href="#StaticMesh-gt-SceneProxy" class="headerlink" title="StaticMesh-&gt;SceneProxy"></a>StaticMesh-&gt;SceneProxy</h2><p>​    在UE中，一个最小的可渲染物体组件是UPrimitiveComponent(GameThread)，它渲染线程中的FPrimitiveSceneProxy一一对应，我们以最常用的一个Component说起：UStaticMeshComponent，它包含了最关键的渲染数据成员：UStaticMesh。原生的顶点数据已经预先存储在了StaticMesh的成员RenderData中，数据是如何由FBX模块导入生成的，不是本章关注的内容，略去不讲。</p>
+<p>​    当一个StaticMesh被拖入场景中时，会调用UStaticMesh::PostLoad，然后执行RenderData的InitResources，生成我们经常在API中见到的VertexBuffer，以及VertexDeclaration。关于顶点工厂的内容，这里也不展开讲述，感兴趣的同学可以参考另一篇文章：。</p>
+<p>​    当一个图元需要被更新渲染信息时，会调用FScene::AddPrimitive()，在其中创建对应的FPrimitiveSceneProxy和FScenePrimitiveInfo，FPrimitiveSceneProxy是图元在渲染线程的代理，FScenePrimitiveInfo则是图元在渲染线程的状态表示，包含一个对应的FPrimitiveSceneProxy，其中会调用AddPrimitiveSceneInfo_RenderThread把Primitive加入到渲染线程中的一个数据结构中，留待渲染线程去更新。</p>
+<p>​    上面说到了，StaticMesh的顶点数据都存在了RenderData中，这一步也会一起转移给FPrimitiveSceneProxy，参考构造函数。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">FScene::AddPrimitive</span><span class="params">(UPrimitiveComponent* Primitive)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">   <span class="comment">//... Addprimitive中的关键代码</span></span><br><span class="line">   </span><br><span class="line">    <span class="comment">// Create the primitive&#x27;s scene proxy.</span></span><br><span class="line">    FPrimitiveSceneProxy* PrimitiveSceneProxy = Primitive-&gt;<span class="built_in">CreateSceneProxy</span>();</span><br><span class="line">    Primitive-&gt;SceneProxy = PrimitiveSceneProxy;</span><br><span class="line">    <span class="keyword">if</span>(!PrimitiveSceneProxy)</span><br><span class="line">    &#123;</span><br><span class="line">       <span class="comment">// Primitives which don&#x27;t have a proxy are irrelevant to the scene manager.</span></span><br><span class="line">       <span class="keyword">return</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// Create the primitive scene info.</span></span><br><span class="line">    FPrimitiveSceneInfo* PrimitiveSceneInfo = <span class="keyword">new</span> <span class="built_in">FPrimitiveSceneInfo</span>(Primitive, <span class="keyword">this</span>);</span><br><span class="line">    PrimitiveSceneProxy-&gt;PrimitiveSceneInfo = PrimitiveSceneInfo;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// Cache the primitives initial transform.</span></span><br><span class="line">    FMatrix RenderMatrix = Primitive-&gt;<span class="built_in">GetRenderMatrix</span>();</span><br><span class="line">    <span class="function">FVector <span class="title">AttachmentRootPosition</span><span class="params">(<span class="number">0</span>)</span></span>;</span><br><span class="line"></span><br><span class="line">    AActor* AttachmentRoot = Primitive-&gt;<span class="built_in">GetAttachmentRootActor</span>();</span><br><span class="line">    <span class="keyword">if</span> (AttachmentRoot)</span><br><span class="line">    &#123;</span><br><span class="line">       AttachmentRootPosition = AttachmentRoot-&gt;<span class="built_in">GetActorLocation</span>();</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">struct</span> <span class="title class_">FCreateRenderThreadParameters</span></span><br><span class="line">    &#123;</span><br><span class="line">       FPrimitiveSceneProxy* PrimitiveSceneProxy;</span><br><span class="line">       FMatrix RenderMatrix;</span><br><span class="line">       FBoxSphereBounds WorldBounds;</span><br><span class="line">       FVector AttachmentRootPosition;</span><br><span class="line">       FBoxSphereBounds LocalBounds;</span><br><span class="line">    &#125;;</span><br><span class="line">    FCreateRenderThreadParameters Params =</span><br><span class="line">    &#123;</span><br><span class="line">       PrimitiveSceneProxy,</span><br><span class="line">       RenderMatrix,</span><br><span class="line">       Primitive-&gt;Bounds,</span><br><span class="line">       AttachmentRootPosition,</span><br><span class="line">       Primitive-&gt;<span class="built_in">CalcBounds</span>(FTransform::Identity)</span><br><span class="line">    &#125;;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// Create any RenderThreadResources required and send a command to the rendering thread to add the primitive to the scene.</span></span><br><span class="line">    FScene* Scene = <span class="keyword">this</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// If this primitive has a simulated previous transform, ensure that the velocity data for the scene representation is correct</span></span><br><span class="line">    TOptional&lt;FTransform&gt; PreviousTransform = FMotionVectorSimulation::<span class="built_in">Get</span>().<span class="built_in">GetPreviousTransform</span>(Primitive);</span><br><span class="line"></span><br><span class="line">    <span class="built_in">ENQUEUE_RENDER_COMMAND</span>(AddPrimitiveCommand)(</span><br><span class="line">       [Params = <span class="built_in">MoveTemp</span>(Params), Scene, PrimitiveSceneInfo, PreviousTransform = <span class="built_in">MoveTemp</span>(PreviousTransform)](FRHICommandListImmediate&amp; RHICmdList)</span><br><span class="line">       &#123;</span><br><span class="line">          FPrimitiveSceneProxy* SceneProxy = Params.PrimitiveSceneProxy;</span><br><span class="line">          FScopeCycleCounter <span class="built_in">Context</span>(SceneProxy-&gt;<span class="built_in">GetStatId</span>());</span><br><span class="line">          SceneProxy-&gt;<span class="built_in">SetTransform</span>(Params.RenderMatrix, Params.WorldBounds, Params.LocalBounds, Params.AttachmentRootPosition);</span><br><span class="line"></span><br><span class="line">          <span class="comment">// Create any RenderThreadResources required.</span></span><br><span class="line">          SceneProxy-&gt;<span class="built_in">CreateRenderThreadResources</span>();</span><br><span class="line"></span><br><span class="line">          Scene-&gt;<span class="built_in">AddPrimitiveSceneInfo_RenderThread</span>(PrimitiveSceneInfo, PreviousTransform);</span><br><span class="line">       &#125;);</span><br><span class="line">    <span class="comment">//...</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">FScene::AddPrimitiveSceneInfo_RenderThread</span><span class="params">(FPrimitiveSceneInfo* PrimitiveSceneInfo, <span class="type">const</span> TOptional&lt;FTransform&gt;&amp; PreviousTransform)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	<span class="built_in">check</span>(<span class="built_in">IsInRenderingThread</span>());</span><br><span class="line">	<span class="built_in">check</span>(PrimitiveSceneInfo-&gt;PackedIndex == INDEX_NONE);</span><br><span class="line">	<span class="built_in">check</span>(!AddedPrimitiveSceneInfos.<span class="built_in">Contains</span>(PrimitiveSceneInfo));</span><br><span class="line">	AddedPrimitiveSceneInfos.<span class="built_in">Add</span>(PrimitiveSceneInfo);</span><br><span class="line">	<span class="keyword">if</span> (PreviousTransform.<span class="built_in">IsSet</span>())</span><br><span class="line">	&#123;</span><br><span class="line">		OverridenPreviousTransforms.<span class="built_in">Add</span>(PrimitiveSceneInfo, PreviousTransform.<span class="built_in">GetValue</span>().<span class="built_in">ToMatrixWithScale</span>());</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>​    接下来就是在渲染线程更新这些PrimitiveSceneInfo数据，具体调用接口在FScene::UpdateAllPrimitiveSceneInfos，这个函数总共包含500+行的代码，我们可以分块看它的主体实现。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">FScene::UpdateAllPrimitiveSceneInfos</span><span class="params">(FRHICommandListImmediate&amp; RHICmdList, <span class="type">bool</span> bAsyncCreateLPIs)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="comment">//处理场景中移除的图元</span></span><br><span class="line">    <span class="keyword">while</span> (RemovedLocalPrimitiveSceneInfos.<span class="built_in">Num</span>())</span><br><span class="line">    &#123;</span><br><span class="line">        </span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">//处理场景中增加的图元</span></span><br><span class="line">    <span class="keyword">while</span> (AddedLocalPrimitiveSceneInfos.<span class="built_in">Num</span>())</span><br><span class="line">    &#123;</span><br><span class="line">        </span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">//处理场景中更新的图元</span></span><br><span class="line">    <span class="keyword">for</span> (<span class="type">const</span> <span class="keyword">auto</span>&amp; Transform : UpdatedTransforms)</span><br><span class="line">    &#123;</span><br><span class="line">        </span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">//处理其他数据 比如距离场</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * The following arrays are densely packed primitive data needed by various</span></span><br><span class="line"><span class="comment"> * rendering passes. PrimitiveSceneInfo-&gt;PackedIndex maintains the index</span></span><br><span class="line"><span class="comment"> * where data is stored in these arrays for a given primitive.</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"></span><br><span class="line"><span class="comment">/** Packed array of primitives in the scene. */</span></span><br><span class="line">TArray&lt;FPrimitiveSceneInfo*&gt; Primitives;</span><br><span class="line"><span class="comment">/** Packed array of all transforms in the scene. */</span></span><br><span class="line">TArray&lt;FMatrix&gt; PrimitiveTransforms;</span><br><span class="line"><span class="comment">/** Packed array of primitive scene proxies in the scene. */</span></span><br><span class="line">TArray&lt;FPrimitiveSceneProxy*&gt; PrimitiveSceneProxies;</span><br><span class="line"><span class="comment">/** Packed array of primitive bounds. */</span></span><br><span class="line">TArray&lt;FPrimitiveBounds&gt; PrimitiveBounds;</span><br><span class="line"><span class="comment">/** Packed array of primitive flags. */</span></span><br><span class="line">TArray&lt;FPrimitiveFlagsCompact&gt; PrimitiveFlagsCompact;</span><br><span class="line"><span class="comment">/** Packed array of precomputed primitive visibility IDs. */</span></span><br><span class="line">TArray&lt;FPrimitiveVisibilityId&gt; PrimitiveVisibilityIds;</span><br><span class="line"><span class="comment">/** Packed array of primitive occlusion flags. See EOcclusionFlags. */</span></span><br><span class="line">TArray&lt;uint8&gt; PrimitiveOcclusionFlags;</span><br><span class="line"><span class="comment">/** Packed array of primitive occlusion bounds. */</span></span><br><span class="line">TArray&lt;FBoxSphereBounds&gt; PrimitiveOcclusionBounds;</span><br><span class="line"><span class="comment">/** Packed array of primitive components associated with the primitive. */</span></span><br><span class="line">TArray&lt;FPrimitiveComponentId&gt; PrimitiveComponentIds;</span><br><span class="line"><span class="comment">/** Packed array of runtime virtual texture flags. */</span></span><br><span class="line">TArray&lt;FPrimitiveVirtualTextureFlags&gt; PrimitiveVirtualTextureFlags;</span><br><span class="line"><span class="comment">/** Packed array of runtime virtual texture lod info. */</span></span><br><span class="line">TArray&lt;FPrimitiveVirtualTextureLodInfo&gt; PrimitiveVirtualTextureLod;		</span><br></pre></td></tr></table></figure>
+<p>​    在处理不同图元的时候，主要是通过更新FScene中的各种数组成员，UE把FPrimitiveSceneProxy按照类型排序存储在数组中，并且在添加和移除时通过更新TypeOffsetTable来快速交换位置，以达到减少数组内数据位置移动带来的消耗。</p>
+<h2 id="SceneProxy-gt-MeshBatch"><a href="#SceneProxy-gt-MeshBatch" class="headerlink" title="SceneProxy-&gt;MeshBatch"></a>SceneProxy-&gt;MeshBatch</h2><p>把数据赋值给了FPrimitiveSceneInfo之后，我们 就要在渲染线程对其进行整合生成MeshBatch。MeshBatch是一组拥有相同材质，顶点数据的Mesh组合，下面是处理流程图：</p>
+<p><img src="/2024/06/18/renderworkflow_data/workflow_addstaticmesh.png" alt></p>
+<p>​    在更新场景时，会调用FPrimitiveSceneInfo::AddToScene来把数据真正传递给渲染线程，通过SCOPE事件，我们大概能看出每一部分在做什么，比如更新Lightmap，Bounds等等，我们这里关注AddStaticMeshes的调用。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">FPrimitiveSceneInfo::AddToScene</span><span class="params">(FRHICommandListImmediate&amp; RHICmdList, FScene* Scene, <span class="type">const</span> TArrayView&lt;FPrimitiveSceneInfo*&gt;&amp; SceneInfos, <span class="type">bool</span> bUpdateStaticDrawLists, <span class="type">bool</span> bAddToStaticDrawLists, <span class="type">bool</span> bAsyncCreateLPIs)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="built_in">check</span>(<span class="built_in">IsInRenderingThread</span>());</span><br><span class="line"></span><br><span class="line">    &#123;</span><br><span class="line">       <span class="built_in">SCOPED_NAMED_EVENT</span>(FPrimitiveSceneInfo_AddToScene_IndirectLightingCacheUniformBuffer, FColor::Turquoise);</span><br><span class="line">        <span class="comment">//...</span></span><br><span class="line">    &#125;</span><br><span class="line">    &#123;</span><br><span class="line"> <span class="built_in">SCOPED_NAMED_EVENT</span>(FPrimitiveSceneInfo_AddToScene_IndirectLightingCacheAllocation, FColor::Orange);</span><br><span class="line">        <span class="comment">//...</span></span><br><span class="line">    &#125;</span><br><span class="line">    &#123;</span><br><span class="line">       <span class="built_in">SCOPED_NAMED_EVENT</span>(FPrimitiveSceneInfo_AddToScene_LightmapDataOffset, FColor::Green);</span><br><span class="line">        <span class="comment">//...</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    &#123;</span><br><span class="line">       <span class="built_in">SCOPED_NAMED_EVENT</span>(FPrimitiveSceneInfo_AddToScene_ReflectionCaptures, FColor::Yellow);</span><br><span class="line">        <span class="comment">//...</span></span><br><span class="line">    &#125;</span><br><span class="line">    &#123;</span><br><span class="line">       <span class="built_in">SCOPED_NAMED_EVENT</span>(FPrimitiveSceneInfo_AddToScene_AddStaticMeshes, FColor::Magenta);</span><br><span class="line">       <span class="keyword">if</span> (bUpdateStaticDrawLists)</span><br><span class="line">       &#123;</span><br><span class="line">          <span class="built_in">AddStaticMeshes</span>(RHICmdList, Scene, SceneInfos, bAddToStaticDrawLists);</span><br><span class="line">       &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    &#123;</span><br><span class="line">       <span class="built_in">SCOPED_NAMED_EVENT</span>(FPrimitiveSceneInfo_AddToScene_AddToPrimitiveOctree, FColor::Red);</span><br><span class="line">        <span class="comment">//...</span></span><br><span class="line">    &#125;</span><br><span class="line">    &#123;</span><br><span class="line">       <span class="built_in">SCOPED_NAMED_EVENT</span>(FPrimitiveSceneInfo_AddToScene_UpdateBounds, FColor::Cyan);</span><br><span class="line">        <span class="comment">//...</span></span><br><span class="line">    &#125;</span><br><span class="line">    &#123;</span><br><span class="line">       <span class="built_in">SCOPED_NAMED_EVENT</span>(FPrimitiveSceneInfo_AddToScene_UpdateVirtualTexture, FColor::Emerald);</span><br><span class="line">        <span class="comment">//...</span></span><br><span class="line">    &#125;</span><br><span class="line">	<span class="comment">//...</span></span><br><span class="line"></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>​    在AddStaticMeshes中，主要做了三步，首先DrawStaticElements填充PrimitiveSceneInfo的MeshBatch数据，然后把MeshBatch数据转移到Scene的StaticMeshes数组中，统一管理，然后缓存MeshDrawCommands。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">FPrimitiveSceneInfo::AddStaticMeshes</span><span class="params">(FRHICommandListImmediate&amp; RHICmdList, FScene* Scene, <span class="type">const</span> TArrayView&lt;FPrimitiveSceneInfo*&gt;&amp; SceneInfos, <span class="type">bool</span> bAddToStaticDrawLists)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="built_in">LLM_SCOPE</span>(ELLMTag::StaticMesh);</span><br><span class="line">    &#123;</span><br><span class="line">       <span class="built_in">ParallelForTemplate</span>(SceneInfos.<span class="built_in">Num</span>(), [Scene, &amp;SceneInfos](int32 Index)</span><br><span class="line">       &#123;</span><br><span class="line">          <span class="built_in">SCOPED_NAMED_EVENT</span>(FPrimitiveSceneInfo_AddStaticMeshes_DrawStaticElements, FColor::Magenta);</span><br><span class="line">          FPrimitiveSceneInfo* SceneInfo = SceneInfos[Index];</span><br><span class="line">          <span class="comment">// Cache the primitive&#x27;s static mesh elements.</span></span><br><span class="line">          FBatchingSPDI <span class="built_in">BatchingSPDI</span>(SceneInfo);</span><br><span class="line">          BatchingSPDI.<span class="built_in">SetHitProxy</span>(SceneInfo-&gt;DefaultDynamicHitProxy);</span><br><span class="line">           <span class="comment">//创建MeshBatch</span></span><br><span class="line">          SceneInfo-&gt;Proxy-&gt;<span class="built_in">DrawStaticElements</span>(&amp;BatchingSPDI);</span><br><span class="line">          SceneInfo-&gt;StaticMeshes.<span class="built_in">Shrink</span>();</span><br><span class="line">          SceneInfo-&gt;StaticMeshRelevances.<span class="built_in">Shrink</span>();</span><br><span class="line"></span><br><span class="line">          <span class="built_in">check</span>(SceneInfo-&gt;StaticMeshRelevances.<span class="built_in">Num</span>() == SceneInfo-&gt;StaticMeshes.<span class="built_in">Num</span>());</span><br><span class="line">       &#125;);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    &#123;</span><br><span class="line">       <span class="built_in">SCOPED_NAMED_EVENT</span>(FPrimitiveSceneInfo_AddStaticMeshes_UpdateSceneArrays, FColor::Blue);</span><br><span class="line">       <span class="keyword">for</span> (FPrimitiveSceneInfo* SceneInfo : SceneInfos)</span><br><span class="line">       &#123;</span><br><span class="line">          <span class="keyword">for</span> (int32 MeshIndex = <span class="number">0</span>; MeshIndex &lt; SceneInfo-&gt;StaticMeshes.<span class="built_in">Num</span>(); MeshIndex++)</span><br><span class="line">          &#123;</span><br><span class="line">             FStaticMeshBatchRelevance&amp; MeshRelevance = SceneInfo-&gt;StaticMeshRelevances[MeshIndex];</span><br><span class="line">             FStaticMeshBatch&amp; Mesh = SceneInfo-&gt;StaticMeshes[MeshIndex];</span><br><span class="line"></span><br><span class="line">             <span class="comment">// Add the static mesh to the scene&#x27;s static mesh list.</span></span><br><span class="line">             FSparseArrayAllocationInfo SceneArrayAllocation = Scene-&gt;StaticMeshes.<span class="built_in">AddUninitialized</span>();</span><br><span class="line">             Scene-&gt;StaticMeshes[SceneArrayAllocation.Index] = &amp;Mesh;</span><br><span class="line">             Mesh.Id = SceneArrayAllocation.Index;</span><br><span class="line">             MeshRelevance.Id = SceneArrayAllocation.Index;</span><br><span class="line">          &#125;</span><br><span class="line">       &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (bAddToStaticDrawLists)</span><br><span class="line">    &#123;</span><br><span class="line">       <span class="built_in">CacheMeshDrawCommands</span>(RHICmdList, Scene, SceneInfos);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="DrawStaticElements"><a href="#DrawStaticElements" class="headerlink" title="DrawStaticElements"></a>DrawStaticElements</h3><p>我们接着看第一步具体做了什么FStaticMeshSceneProxy::DrawStaticElements，这里只关注主体分支的调用，其他一些特殊情况的分支实现基本相同，比如当指定ForcedLodModel时，我们只对指定LOD的Mesh数据创建MeshBatch。这里主要调用了两个接口填充MeshBatch，GetMeshElement和DrawMeshes，其中GetMeshElement主要负责把VF，LOD，Material相关数据从staticmesh的数据结构中存储到Meshbatch，而drawmeshes负责把meshbatch数据存储到FPrimitiveSceneInfo的StaticMeshes数组中，此外还额外存储了StaticMeshRelevances（与StaticMesh相同，存储了一些其他信息，但为了效率需要特殊处理，后续会提到）。到这一步就完成了渲染数据从场景中的StaticMesh转移到了渲染线程中。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">FStaticMeshSceneProxy::DrawStaticElements</span><span class="params">(FStaticPrimitiveDrawInterface* PDI)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line"><span class="comment">//...</span></span><br><span class="line"><span class="comment">// Draw the static mesh elements.</span></span><br><span class="line">             <span class="keyword">for</span>(int32 SectionIndex = <span class="number">0</span>;SectionIndex &lt; LODModel.Sections.<span class="built_in">Num</span>();SectionIndex++)</span><br><span class="line">             &#123;</span><br><span class="line"><span class="meta">#<span class="keyword">if</span> WITH_EDITOR</span></span><br><span class="line">                <span class="keyword">if</span>( GIsEditor )</span><br><span class="line">                &#123;</span><br><span class="line">                   <span class="type">const</span> FLODInfo::FSectionInfo&amp; Section = LODs[LODIndex].Sections[SectionIndex];</span><br><span class="line"></span><br><span class="line">                   bIsMeshElementSelected = Section.bSelected;</span><br><span class="line">                   PDI-&gt;<span class="built_in">SetHitProxy</span>(Section.HitProxy);</span><br><span class="line">                &#125;</span><br><span class="line"><span class="meta">#<span class="keyword">endif</span> <span class="comment">// WITH_EDITOR</span></span></span><br><span class="line"></span><br><span class="line">                <span class="type">const</span> int32 NumBatches = <span class="built_in">GetNumMeshBatches</span>();</span><br><span class="line">                PDI-&gt;<span class="built_in">ReserveMemoryForMeshes</span>(NumBatches * (<span class="number">1</span> + NumRuntimeVirtualTextureTypes));</span><br><span class="line"></span><br><span class="line">                <span class="keyword">for</span> (int32 BatchIndex = <span class="number">0</span>; BatchIndex &lt; NumBatches; BatchIndex++)</span><br><span class="line">                &#123;</span><br><span class="line">                   FMeshBatch BaseMeshBatch;</span><br><span class="line">                   <span class="keyword">if</span> (<span class="built_in">GetMeshElement</span>(LODIndex, BatchIndex, SectionIndex, PrimitiveDPG, bIsMeshElementSelected, <span class="literal">true</span>, BaseMeshBatch))</span><br><span class="line">                   &#123;</span><br><span class="line">                      <span class="keyword">if</span> (NumRuntimeVirtualTextureTypes &gt; <span class="number">0</span>)</span><br><span class="line">                      &#123;</span><br><span class="line">                         <span class="comment">// Runtime virtual texture mesh elements.</span></span><br><span class="line">                         <span class="function">FMeshBatch <span class="title">MeshBatch</span><span class="params">(BaseMeshBatch)</span></span>;</span><br><span class="line">                         <span class="built_in">SetupMeshBatchForRuntimeVirtualTexture</span>(MeshBatch);</span><br><span class="line"></span><br><span class="line">                         <span class="keyword">for</span> (ERuntimeVirtualTextureMaterialType MaterialType : RuntimeVirtualTextureMaterialTypes)</span><br><span class="line">                         &#123;</span><br><span class="line">                            MeshBatch.RuntimeVirtualTextureMaterialType = (uint32)MaterialType;</span><br><span class="line">                            PDI-&gt;<span class="built_in">DrawMesh</span>(MeshBatch, ScreenSize);</span><br><span class="line">                         &#125;</span><br><span class="line">                      &#125;</span><br><span class="line"></span><br><span class="line">                      &#123;</span><br><span class="line">                         <span class="comment">// Standard mesh elements.</span></span><br><span class="line">                         <span class="comment">// If we have submitted an optimized shadow-only mesh, remaining mesh elements must not cast shadows.</span></span><br><span class="line">                         <span class="function">FMeshBatch <span class="title">MeshBatch</span><span class="params">(BaseMeshBatch)</span></span>;</span><br><span class="line">                         MeshBatch.CastShadow &amp;= !bUseUnifiedMeshForShadow;</span><br><span class="line">                         MeshBatch.bUseAsOccluder &amp;= !bUseUnifiedMeshForDepth;</span><br><span class="line">                         MeshBatch.bUseForDepthPass &amp;= !bUseUnifiedMeshForDepth;</span><br><span class="line">                         PDI-&gt;<span class="built_in">DrawMesh</span>(MeshBatch, ScreenSize);</span><br><span class="line">                      &#125;</span><br><span class="line">                   &#125;</span><br><span class="line">                &#125;</span><br><span class="line">             &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="MeshBatch-gt-MeshDrawCommands"><a href="#MeshBatch-gt-MeshDrawCommands" class="headerlink" title="MeshBatch-&gt;MeshDrawCommands"></a>MeshBatch-&gt;MeshDrawCommands</h2><p>MeshDrawCommands是由MeshBatch生成，最终会交给RHI线程的一组渲染命令，包含渲染关系状态，Shader绑定状态，Mesh信息等等。</p>
+<p>FMeshPassProcessor是一个将MeshBatch转换成MeshDrawCommands的工具类，有多种Pass子类实现。</p>
+<p>注意：这里因为是处理StaticMesh，所以最终MeshDrawCommands会存储到CachedDrawCommands中</p>
+<h3 id="CacheMeshDrawCommands"><a href="#CacheMeshDrawCommands" class="headerlink" title="CacheMeshDrawCommands"></a>CacheMeshDrawCommands</h3><p>​    这一步做的事情很多，主要是缓存对应的MeshDrawCommands，在后面的工作流中也会用到这里的结果。看代码可以发现主要是通过多线程执行对应的lambda，首先预创建StaticMeshCommandInfos数据结构，大小等于Meshbatch*MeshPassNum，然后通过PassMeshProcessor创建对应的MeshDrawCommands，并填充StaticMeshCommandInfos数据结构，这个结构在后面标记相关性时会用到。下面截取CacheMeshDrawCommands的主要代码：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">FPrimitiveSceneInfo::CacheMeshDrawCommands</span><span class="params">(FRHICommandListImmediate&amp; RHICmdList, FScene* Scene, <span class="type">const</span> TArrayView&lt;FPrimitiveSceneInfo*&gt;&amp; SceneInfos)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="comment">//...预创建StaticMeshCommandInfos</span></span><br><span class="line">    </span><br><span class="line">    <span class="keyword">auto</span> DoWorkLambda = [Scene, SceneInfos](int32 Index)</span><br><span class="line">    &#123;</span><br><span class="line"><span class="keyword">for</span> (int32 PassIndex = <span class="number">0</span>; PassIndex &lt; EMeshPass::Num; PassIndex++)</span><br><span class="line">       &#123;</span><br><span class="line">          <span class="type">const</span> EShadingPath ShadingPath = Scene-&gt;<span class="built_in">GetShadingPath</span>();</span><br><span class="line">          EMeshPass::Type PassType = (EMeshPass::Type)PassIndex;</span><br><span class="line"></span><br><span class="line">          <span class="keyword">if</span> ((FPassProcessorManager::<span class="built_in">GetPassFlags</span>(ShadingPath, PassType) &amp; EMeshPassFlags::CachedMeshCommands) != EMeshPassFlags::None)</span><br><span class="line">          &#123;</span><br><span class="line">             <span class="function">FCachedMeshDrawCommandInfo <span class="title">CommandInfo</span><span class="params">(PassType)</span></span>;</span><br><span class="line"></span><br><span class="line">             FCriticalSection&amp; CachedMeshDrawCommandLock = Scene-&gt;CachedMeshDrawCommandLock[PassType];</span><br><span class="line">             FCachedPassMeshDrawList&amp; SceneDrawList = Scene-&gt;CachedDrawLists[PassType];</span><br><span class="line">             FStateBucketMap&amp; CachedMeshDrawCommandStateBuckets = Scene-&gt;CachedMeshDrawCommandStateBuckets[PassType];</span><br><span class="line">              <span class="comment">//将CommandInfo传入context，MeshDrawCommands最后会填充这个结构</span></span><br><span class="line">             <span class="function">FCachedPassMeshDrawListContext <span class="title">CachedPassMeshDrawListContext</span><span class="params">(CommandInfo, CachedMeshDrawCommandLock, SceneDrawList, CachedMeshDrawCommandStateBuckets, *Scene)</span></span>;</span><br><span class="line">			<span class="comment">//这里拿到MeshProcessor创建函数</span></span><br><span class="line">             PassProcessorCreateFunction CreateFunction = FPassProcessorManager::<span class="built_in">GetCreateFunction</span>(ShadingPath, PassType);</span><br><span class="line">             <span class="comment">//获得具体的Processor</span></span><br><span class="line">              FMeshPassProcessor* PassMeshProcessor = <span class="built_in">CreateFunction</span>(Scene, <span class="literal">nullptr</span>, &amp;CachedPassMeshDrawListContext);</span><br><span class="line"></span><br><span class="line">             <span class="keyword">if</span> (PassMeshProcessor != <span class="literal">nullptr</span>)</span><br><span class="line">             &#123;</span><br><span class="line">                <span class="keyword">for</span> (<span class="type">const</span> FMeshInfoAndIndex&amp; MeshAndInfo : MeshBatches)</span><br><span class="line">                &#123;</span><br><span class="line">                   FPrimitiveSceneInfo* SceneInfo = SceneInfos[MeshAndInfo.InfoIndex];</span><br><span class="line">                   FStaticMeshBatch&amp; Mesh = SceneInfo-&gt;StaticMeshes[MeshAndInfo.MeshIndex];</span><br><span class="line">                   </span><br><span class="line">                   CommandInfo = <span class="built_in">FCachedMeshDrawCommandInfo</span>(PassType);</span><br><span class="line">                   FStaticMeshBatchRelevance&amp; MeshRelevance = SceneInfo-&gt;StaticMeshRelevances[MeshAndInfo.MeshIndex];</span><br><span class="line"></span><br><span class="line">                   <span class="built_in">check</span>(!MeshRelevance.CommandInfosMask.<span class="built_in">Get</span>(PassType));</span><br><span class="line"></span><br><span class="line">                   uint64 BatchElementMask = ~<span class="number">0ull</span>;</span><br><span class="line">                    <span class="comment">//添加对应的Meshbatch，并生成MeshDrawCommands，这里</span></span><br><span class="line">                   PassMeshProcessor-&gt;<span class="built_in">AddMeshBatch</span>(Mesh, BatchElementMask, SceneInfo-&gt;Proxy);</span><br><span class="line"></span><br><span class="line">                   <span class="keyword">if</span> (CommandInfo.CommandIndex != <span class="number">-1</span> || CommandInfo.StateBucketId != <span class="number">-1</span>)</span><br><span class="line">                   &#123;</span><br><span class="line">                      <span class="built_in">static_assert</span>(<span class="built_in">sizeof</span>(MeshRelevance.CommandInfosMask) * <span class="number">8</span> &gt;= EMeshPass::Num, <span class="string">&quot;CommandInfosMask is too small to contain all mesh passes.&quot;</span>);</span><br><span class="line">                      MeshRelevance.CommandInfosMask.<span class="built_in">Set</span>(PassType);</span><br><span class="line">                      MeshRelevance.CommandInfosBase++;</span><br><span class="line"></span><br><span class="line">                      <span class="type">int</span> CommandInfoIndex = MeshAndInfo.MeshIndex * EMeshPass::Num + PassType;</span><br><span class="line">                      <span class="built_in">check</span>(SceneInfo-&gt;StaticMeshCommandInfos[CommandInfoIndex].MeshPass == EMeshPass::Num);</span><br><span class="line">                       <span class="comment">//填充StaticMeshCommandInfos数据结构</span></span><br><span class="line">                      SceneInfo-&gt;StaticMeshCommandInfos[CommandInfoIndex] = CommandInfo;</span><br><span class="line"></span><br><span class="line">                   &#125;</span><br><span class="line">                &#125;</span><br><span class="line">                PassMeshProcessor-&gt;~<span class="built_in">FMeshPassProcessor</span>();</span><br><span class="line">             &#125;</span><br><span class="line">          &#125;</span><br><span class="line">       &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">//后续其他处理</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>​    我们接着看AddMeshBatch是如何生成MeshDrawCommands的，内部调用了TryAddMeshBatch，然后通过对应Processor的Process接口调用BuildMeshDrawCommands最终生MeshDrawCommands。</p>
+<p>BuildMeshDrawCommands这里会设置对应的材质shader，管线状态，以及VF声明。最后调用FinalizeCommand接口填充GPUScene用来合批的StateBuckets，以及把MeshDrawCommands放入Scene-&gt;CachedDrawLists[PassType]中，并把对应下标赋值给最开始传入Processsor的context的CommandInfo，也就是PrimitiveInfo中StaticMeshCommandInfos要赋值的对象。</p>
+<p>这里涉及的函数太多就不展开了，总之我们知道这一步生成了MeshDrawCommands，并且存在了TaskContext的成员中，并且primitivesceneInfo中保存了对应的下标，这里TaskContext的保存MeshDrawCommands的成员就是最开始创建Processor中指定的Drawlist，也就是上面代码中的Scene-&gt;CachedDrawLists。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/UE%E6%BA%90%E7%A0%81/" rel="tag"># UE源码</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2024/06/13/GPUScene/" rel="prev" title="GPUScene">
+      <i class="fa fa-chevron-left"></i> GPUScene
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2024/06/28/renderworkflow_visibility/" rel="next" title="UE渲染工作流(二)——可见性篇">
+      UE渲染工作流(二)——可见性篇 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#UE%E6%B8%B2%E6%9F%93%E5%B7%A5%E4%BD%9C%E6%B5%81-%E4%B8%80-%E2%80%94%E2%80%94%E6%95%B0%E6%8D%AE%E7%AF%87"><span class="nav-number">1.</span> <span class="nav-text">UE渲染工作流(一)——数据篇</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#StaticMesh-gt-SceneProxy"><span class="nav-number">1.1.</span> <span class="nav-text">StaticMesh-&gt;SceneProxy</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#SceneProxy-gt-MeshBatch"><span class="nav-number">1.2.</span> <span class="nav-text">SceneProxy-&gt;MeshBatch</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#DrawStaticElements"><span class="nav-number">1.2.1.</span> <span class="nav-text">DrawStaticElements</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#MeshBatch-gt-MeshDrawCommands"><span class="nav-number">1.3.</span> <span class="nav-text">MeshBatch-&gt;MeshDrawCommands</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#CacheMeshDrawCommands"><span class="nav-number">1.3.1.</span> <span class="nav-text">CacheMeshDrawCommands</span></a></li></ol></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Ritchie"
+      src="/images/avatar.jpg">
+  <p class="site-author-name" itemprop="name">Ritchie</p>
+  <div class="site-description" itemprop="description">Engine/Graphics 爱好者 做人没有梦想,那和咸鱼有什么区别</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">14</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">2</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2025</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Ritchie</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-area"></i>
+    </span>
+      <span class="post-meta-item-text">站点总字数：</span>
+    <span title="站点总字数">27k</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+      <span class="post-meta-item-text">站点阅读时长 &asymp;</span>
+    <span title="站点阅读时长">1:40</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js"></script>
+  <script src="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+
+<script>
+  if (typeof MathJax === 'undefined') {
+    window.MathJax = {
+      loader: {
+        source: {
+          '[tex]/amsCd': '[tex]/amscd',
+          '[tex]/AMScd': '[tex]/amscd'
+        }
+      },
+      tex: {
+        inlineMath: {'[+]': [['$', '$']]},
+        tags: 'ams'
+      },
+      options: {
+        renderActions: {
+          findScript: [10, doc => {
+            document.querySelectorAll('script[type^="math/tex"]').forEach(node => {
+              const display = !!node.type.match(/; *mode=display/);
+              const math = new doc.options.MathItem(node.textContent, doc.inputJax[0], display);
+              const text = document.createTextNode('');
+              node.parentNode.replaceChild(text, node);
+              math.start = {node: text, delim: '', n: 0};
+              math.end = {node: text, delim: '', n: 0};
+              doc.math.push(math);
+            });
+          }, '', false],
+          insertedScript: [200, () => {
+            document.querySelectorAll('mjx-container').forEach(node => {
+              let target = node.parentNode;
+              if (target.nodeName.toLowerCase() === 'li') {
+                target.parentNode.classList.add('has-jax');
+              }
+            });
+          }, '', false]
+        }
+      }
+    };
+    (function () {
+      var script = document.createElement('script');
+      script.src = '//cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js';
+      script.defer = true;
+      document.head.appendChild(script);
+    })();
+  } else {
+    MathJax.startup.document.state(0);
+    MathJax.texReset();
+    MathJax.typeset();
+  }
+</script>
+
+    
+
+  
+
+</body>
+</html>

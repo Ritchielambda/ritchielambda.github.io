@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 7.1.1">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"ritchielambda.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":true,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="UE渲染工作流(二)——可见性篇​    上一篇我们讨论到StaticMesh的数据从RenderData数据成员设置到VF中，然后再赋值给渲染线程的FPrimitiveSceneInfo的MeshBatch，这一篇主要讨论在渲染线程拥有了Mesh数据后，如何做可见性的过滤。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="UE渲染工作流(二)——可见性篇">
+<meta property="og:url" content="https://ritchielambda.github.io/2024/06/28/renderworkflow_visibility/index.html">
+<meta property="og:site_name" content="Ritchie&#39;s Blog">
+<meta property="og:description" content="UE渲染工作流(二)——可见性篇​    上一篇我们讨论到StaticMesh的数据从RenderData数据成员设置到VF中，然后再赋值给渲染线程的FPrimitiveSceneInfo的MeshBatch，这一篇主要讨论在渲染线程拥有了Mesh数据后，如何做可见性的过滤。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://ritchielambda.github.io/2024/06/28/renderworkflow_visibility/renderpath.png">
+<meta property="article:published_time" content="2024-06-28T09:09:53.000Z">
+<meta property="article:modified_time" content="2025-06-30T15:40:06.408Z">
+<meta property="article:author" content="Ritchie">
+<meta property="article:tag" content="UE源码">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://ritchielambda.github.io/2024/06/28/renderworkflow_visibility/renderpath.png">
+
+<link rel="canonical" href="https://ritchielambda.github.io/2024/06/28/renderworkflow_visibility/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>UE渲染工作流(二)——可见性篇 | Ritchie's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+<link rel="alternate" href="/atom.xml" title="Ritchie's Blog" type="application/atom+xml">
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Ritchie's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://ritchielambda.github.io/2024/06/28/renderworkflow_visibility/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpg">
+      <meta itemprop="name" content="Ritchie">
+      <meta itemprop="description" content="Engine/Graphics 爱好者 做人没有梦想,那和咸鱼有什么区别">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Ritchie's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          UE渲染工作流(二)——可见性篇
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2024-06-28 09:09:53" itemprop="dateCreated datePublished" datetime="2024-06-28T09:09:53+00:00">2024-06-28</time>
+            </span>
+
+          
+            <span class="post-meta-item" title="本文字数">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+              <span>3.1k</span>
+            </span>
+            <span class="post-meta-item" title="阅读时长">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+              <span>11 分钟</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="UE渲染工作流-二-——可见性篇"><a href="#UE渲染工作流-二-——可见性篇" class="headerlink" title="UE渲染工作流(二)——可见性篇"></a>UE渲染工作流(二)——可见性篇</h1><p>​    上一篇我们讨论到StaticMesh的数据从RenderData数据成员设置到VF中，然后再赋值给渲染线程的FPrimitiveSceneInfo的MeshBatch，这一篇主要讨论在渲染线程拥有了Mesh数据后，如何做可见性的过滤。</p>
+<span id="more"></span>
+<p>​    可见性计算的入口在FMobileSceneRenderer::InitViews，其中有三个主要函数，我们主要讨论最重要的ComputeViewVisibility，前后两个SetUp是对视对本帧数据做一些预处理。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">PreVisibilityFrameSetup</span>(RHICmdList);</span><br><span class="line"><span class="built_in">ComputeViewVisibility</span>(RHICmdList, BasePassDepthStencilAccess, ViewCommandsPerView, DynamicIndexBuffer, DynamicVertexBuffer, DynamicReadBuffer);</span><br><span class="line"><span class="built_in">PostVisibilityFrameSetup</span>(ILCTaskData);</span><br></pre></td></tr></table></figure>
+<p>​    ComputeViewVisibility分为几个模块执行</p>
+<ol>
+<li><p>更新View下的可见性Map数据结构</p>
+</li>
+<li><p>视锥裁剪</p>
+</li>
+<li><p>更新视图中隐藏/仅可见/线框绘制的图元</p>
+</li>
+<li><p>计算并标记视图相关性</p>
+</li>
+<li><p>获取动态图元的MeshBatch</p>
+</li>
+<li><p>设置MeshPass数据</p>
+<p>其中1，3步骤比较直接，这里不再解读，都是直接对PrimitiveMap进行操作赋值。</p>
+<p>这里的大部分Map都使用了FSceneBitArray结构，其实本质上是一个uint32的数组，每一个uint32的位单独代表一个Primitive，所以在操作的时候需要先找到对于的uint32，然后再操作对应的位数。</p>
+</li>
+</ol>
+<h2 id="FrustumCull"><a href="#FrustumCull" class="headerlink" title="FrustumCull"></a>FrustumCull</h2><p>​    在执行视锥裁剪之前，UE先做了HLOD的更新，本篇不多赘述，后面会单独讲这个系统，大概作用是会将远处的Mesh按照一定范围，合并成一个Mesh，生成新的Material，这样的好处是可以减小drawcall，但是因为需要合并新的Mesh，所以内存会变大。</p>
+<p>​    视锥裁剪函数入口为FrustumCull，实际算法就是根据FPrimitiveSceneInfo的绘制距离与当前视角远点对比，根据大于，等于，小于渐变距离范围分别加入到View的三个PrimitiveMap中。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">//根据primitiveid下标，填充三种map，可见/不可见/淡出</span></span><br><span class="line">				<span class="keyword">if</span> (FadingBits)</span><br><span class="line">				&#123;</span><br><span class="line">					<span class="built_in">check</span>(!View.PotentiallyFadingPrimitiveMap.<span class="built_in">GetData</span>()[WordIndex]); <span class="comment">// this should start at zero</span></span><br><span class="line">					View.PotentiallyFadingPrimitiveMap.<span class="built_in">GetData</span>()[WordIndex] = FadingBits;</span><br><span class="line">				&#125;</span><br><span class="line">				<span class="keyword">if</span> (VisBits)</span><br><span class="line">				&#123;</span><br><span class="line">					<span class="built_in">check</span>(!View.PrimitiveVisibilityMap.<span class="built_in">GetData</span>()[WordIndex]); <span class="comment">// this should start at zero</span></span><br><span class="line">					View.PrimitiveVisibilityMap.<span class="built_in">GetData</span>()[WordIndex] = VisBits;</span><br><span class="line">				&#125;</span><br><span class="line">				<span class="keyword">if</span> (DistanceCulledBits)</span><br><span class="line">				&#123;</span><br><span class="line">					<span class="built_in">check</span>(!View.DistanceCullingPrimitiveMap.<span class="built_in">GetData</span>()[WordIndex]); <span class="comment">// this should start at zero</span></span><br><span class="line">					View.DistanceCullingPrimitiveMap.<span class="built_in">GetData</span>()[WordIndex] = DistanceCulledBits;</span><br><span class="line">				&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="ComputeAndMarkRelevanceForViewParallel"><a href="#ComputeAndMarkRelevanceForViewParallel" class="headerlink" title="ComputeAndMarkRelevanceForViewParallel"></a>ComputeAndMarkRelevanceForViewParallel</h2><p>这一步主要是通过SceneProxy的GetViewRelevance接口获取每一个proxy是否跟View相关，来决定每一个PrimitiveSceneInfo后续的绘制操作，每一个相关性的作用可以参考FPrimitiveViewRelevance类的成员，我们这里只关注它的动态/静态相关性，它们最终决定了对应的PrimitiveSceneInfo是通过哪种绘制路径来绘制。</p>
+<p><img src="/2024/06/28/renderworkflow_visibility/renderpath.png" alt></p>
+<p>​    绘制路径是UE针对静态物体的一种优化手段，UE的渲染数据流向为上图从左到右，一层一层数据归集，最终生成一个FMeshDrawCommands丢给RHI线程调用底层图形API，但是对于场景中那些不怎么变化的物体，不需要每帧都重复这个流程，可以把他们的MeshDrawCommands缓存下来，这就是静态绘制路径，而需要每帧都重新生成的是动态绘制路径。</p>
+<p>这一步主要通过FRelevancePacket对View.PrimitiveVisibilityMap遍历进行多线程计算，PrimitiveVisibilityMap已经在2，3步骤中被更新，主要执行其接口AnyThreadTask()</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">AnyThreadTask</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="built_in">ComputeRelevance</span>();</span><br><span class="line">    <span class="built_in">MarkRelevant</span>();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="ComputeRelevance"><a href="#ComputeRelevance" class="headerlink" title="ComputeRelevance"></a>ComputeRelevance</h3><p>这一步主要就是通过SceneProxy的GetViewRelevance接口获取每一个proxy的相关性，加入不同的数组队列中保存，这里我们关注两个相关性：静态/动态。对于静态会添加到RelevantStaticPrimitives，对于动态会对函数的返回值OutHasDynamicMeshElementsMasks做标记，在函数外再做处理。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">ComputeRelevance</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line"><span class="keyword">for</span> (int32 Index = <span class="number">0</span>; Index &lt; Input.NumPrims; Index++)</span><br><span class="line">	&#123;</span><br><span class="line">			int32 BitIndex = Input.Prims[Index];</span><br><span class="line">			FPrimitiveSceneInfo* PrimitiveSceneInfo = Scene-&gt;Primitives[BitIndex];</span><br><span class="line">			FPrimitiveViewRelevance&amp; ViewRelevance = <span class="built_in">const_cast</span>&lt;FPrimitiveViewRelevance&amp;&gt;(View.PrimitiveViewRelevanceMap[BitIndex]);</span><br><span class="line">			ViewRelevance = PrimitiveSceneInfo-&gt;Proxy-&gt;<span class="built_in">GetViewRelevance</span>(&amp;View);</span><br><span class="line">			ViewRelevance.bInitializedThisFrame = <span class="literal">true</span>;</span><br><span class="line"></span><br><span class="line">			<span class="type">const</span> <span class="type">bool</span> bStaticRelevance = ViewRelevance.bStaticRelevance;</span><br><span class="line">			<span class="type">const</span> <span class="type">bool</span> bDrawRelevance = ViewRelevance.bDrawRelevance;</span><br><span class="line">			<span class="type">const</span> <span class="type">bool</span> bDynamicRelevance = ViewRelevance.bDynamicRelevance;</span><br><span class="line">			<span class="type">const</span> <span class="type">bool</span> bShadowRelevance = ViewRelevance.bShadowRelevance;</span><br><span class="line">			<span class="type">const</span> <span class="type">bool</span> bEditorRelevance = ViewRelevance.bEditorPrimitiveRelevance;</span><br><span class="line">			<span class="type">const</span> <span class="type">bool</span> bEditorSelectionRelevance = ViewRelevance.bEditorStaticSelectionRelevance;</span><br><span class="line">			<span class="type">const</span> <span class="type">bool</span> bTranslucentRelevance = ViewRelevance.<span class="built_in">HasTranslucency</span>();</span><br><span class="line">			<span class="comment">//对静态相关性处理</span></span><br><span class="line">			<span class="keyword">if</span> (bStaticRelevance &amp;&amp; (bDrawRelevance || bShadowRelevance))</span><br><span class="line">			&#123;</span><br><span class="line">				RelevantStaticPrimitives.<span class="built_in">AddPrim</span>(BitIndex);</span><br><span class="line">			&#125;</span><br><span class="line">    		<span class="keyword">if</span> (bEditorRelevance)</span><br><span class="line">			&#123;</span><br><span class="line">				++NumVisibleDynamicEditorPrimitives;</span><br><span class="line"></span><br><span class="line">				<span class="keyword">if</span> (GIsEditor)</span><br><span class="line">				&#123;</span><br><span class="line">					OutHasDynamicEditorMeshElementsMasks[BitIndex] |= ViewBit;</span><br><span class="line">				&#125;</span><br><span class="line">			&#125;</span><br><span class="line">    		<span class="comment">//动态相关性处理	</span></span><br><span class="line">			<span class="keyword">else</span> <span class="keyword">if</span>(bDynamicRelevance)</span><br><span class="line">			&#123;</span><br><span class="line">				<span class="comment">// Keep track of visible dynamic primitives.</span></span><br><span class="line">				++NumVisibleDynamicPrimitives;</span><br><span class="line">				OutHasDynamicMeshElementsMasks[BitIndex] |= ViewBit;</span><br><span class="line"></span><br><span class="line">				<span class="keyword">if</span> (ViewRelevance.bHasSimpleLights)</span><br><span class="line">				&#123;</span><br><span class="line">					VisibleDynamicPrimitivesWithSimpleLights.<span class="built_in">AddPrim</span>(PrimitiveSceneInfo);</span><br><span class="line">				&#125;</span><br><span class="line">			&#125;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>先看一下StaticMesh是如何决定是否是静态的：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">FPrimitiveViewRelevance <span class="title">FStaticMeshSceneProxy::GetViewRelevance</span><span class="params">(<span class="type">const</span> FSceneView* View)</span> <span class="type">const</span></span></span><br><span class="line"><span class="function"></span>&#123;   </span><br><span class="line">    <span class="built_in">checkSlow</span>(<span class="built_in">IsInParallelRenderingThread</span>());</span><br><span class="line"></span><br><span class="line">    FPrimitiveViewRelevance Result;</span><br><span class="line">    Result.bDrawRelevance = <span class="built_in">IsShown</span>(View) &amp;&amp; View-&gt;Family-&gt;EngineShowFlags.StaticMeshes;</span><br><span class="line">    Result.bRenderCustomDepth = <span class="built_in">ShouldRenderCustomDepth</span>();</span><br><span class="line">    Result.bRenderInMainPass = <span class="built_in">ShouldRenderInMainPass</span>();</span><br><span class="line">    Result.bUsesLightingChannels = <span class="built_in">GetLightingChannelMask</span>() != <span class="built_in">GetDefaultLightingChannelMask</span>();</span><br><span class="line">    Result.bTranslucentSelfShadow = bCastVolumetricTranslucentShadow;</span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">if</span> STATICMESH_ENABLE_DEBUG_RENDERING</span></span><br><span class="line">    <span class="type">bool</span> bDrawSimpleCollision = <span class="literal">false</span>, bDrawComplexCollision = <span class="literal">false</span>;</span><br><span class="line">    <span class="type">const</span> <span class="type">bool</span> bInCollisionView = <span class="built_in">IsCollisionView</span>(View-&gt;Family-&gt;EngineShowFlags, bDrawSimpleCollision, bDrawComplexCollision);</span><br><span class="line"><span class="meta">#<span class="keyword">else</span></span></span><br><span class="line">    <span class="type">bool</span> bInCollisionView = <span class="literal">false</span>;</span><br><span class="line"><span class="meta">#<span class="keyword">endif</span></span></span><br><span class="line">    <span class="type">const</span> <span class="type">bool</span> bAllowStaticLighting = FReadOnlyCVARCache::<span class="built_in">Get</span>().bAllowStaticLighting;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span>(</span><br><span class="line">       <span class="comment">// Force down dynamic rendering path if invalid lightmap settings, so we can apply an error material in DrawRichMesh</span></span><br><span class="line">       (bAllowStaticLighting &amp;&amp; <span class="built_in">HasStaticLighting</span>() &amp;&amp; !<span class="built_in">HasValidSettingsForStaticLighting</span>()) ||</span><br><span class="line">       <span class="built_in">HasViewDependentDPG</span>()</span><br><span class="line">       )</span><br><span class="line">    &#123;</span><br><span class="line">       Result.bDynamicRelevance = <span class="literal">true</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">else</span></span><br><span class="line">    &#123;</span><br><span class="line">       Result.bStaticRelevance = <span class="literal">true</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    Result.bShadowRelevance = <span class="built_in">IsShadowCast</span>(View);</span><br><span class="line"></span><br><span class="line">    MaterialRelevance.<span class="built_in">SetPrimitiveViewRelevance</span>(Result);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (!View-&gt;Family-&gt;EngineShowFlags.Materials </span><br><span class="line"><span class="meta">#<span class="keyword">if</span> STATICMESH_ENABLE_DEBUG_RENDERING</span></span><br><span class="line">       || bInCollisionView</span><br><span class="line"><span class="meta">#<span class="keyword">endif</span></span></span><br><span class="line">       )</span><br><span class="line">    &#123;</span><br><span class="line">       Result.bOpaque = <span class="literal">true</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    Result.bVelocityRelevance = <span class="built_in">IsMovable</span>() &amp;&amp; Result.bOpaque &amp;&amp; Result.bRenderInMainPass;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> Result;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>​    可以看到有几个判断决定，我们看下具体实现，其实就是判断在编辑器中勾选的移动性，以及是否支持静态光，至于Lightmap的判断我们这里暂不展开。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">bool</span> <span class="title">UPrimitiveComponent::HasStaticLighting</span><span class="params">()</span> <span class="type">const</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="keyword">return</span> ((Mobility == EComponentMobility::Static) || LightmapType == ELightmapType::ForceSurface) &amp;&amp; <span class="built_in">SupportsStaticLighting</span>();</span><br><span class="line">&#125;</span><br><span class="line"><span class="comment">//下面是StaticMeshComponent的实现</span></span><br><span class="line"><span class="comment">/** Whether the component type supports static lighting. */</span></span><br><span class="line"><span class="function"><span class="keyword">virtual</span> <span class="type">bool</span> <span class="title">SupportsStaticLighting</span><span class="params">()</span> <span class="type">const</span> <span class="keyword">override</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">true</span>;</span><br><span class="line">&#125;</span><br><span class="line"><span class="function"><span class="type">bool</span> <span class="title">UStaticMeshComponent::HasValidSettingsForStaticLighting</span><span class="params">(<span class="type">bool</span> bOverlookInvalidComponents)</span> <span class="type">const</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	<span class="keyword">if</span> (bOverlookInvalidComponents &amp;&amp; !<span class="built_in">GetStaticMesh</span>())</span><br><span class="line">	&#123;</span><br><span class="line">		<span class="comment">// Return true for invalid components, this is used during the map check where those invalid components will be warned about separately</span></span><br><span class="line">		<span class="keyword">return</span> <span class="literal">true</span>;</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">else</span></span><br><span class="line">	&#123;</span><br><span class="line">		int32 LightMapWidth = <span class="number">0</span>;</span><br><span class="line">		int32 LightMapHeight = <span class="number">0</span>;</span><br><span class="line">		<span class="built_in">GetLightMapResolution</span>(LightMapWidth, LightMapHeight);</span><br><span class="line"></span><br><span class="line">		<span class="keyword">return</span> Super::<span class="built_in">HasValidSettingsForStaticLighting</span>(bOverlookInvalidComponents) </span><br><span class="line">			&amp;&amp; <span class="built_in">GetStaticMesh</span>()</span><br><span class="line">			&amp;&amp; <span class="built_in">UsesTextureLightmaps</span>(LightMapWidth, LightMapHeight);</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<p>​    我们大致可以判断出什么样的StaticMeshComponent是动态相关性：支持StaticLighting的，但是没有设置对应的Lightmap。</p>
+<h3 id="MarkRelevant"><a href="#MarkRelevant" class="headerlink" title="MarkRelevant"></a>MarkRelevant</h3><p>​    这一步只对静态相关性的Primitive处理，会根据PrimitiveSceneInfo的StaticMeshRelevances以及shadingpath，把PrimitiveSceneInfo的MeshDrawCommands添加到不同Pass的数组队列中，而静态Primitive的MeshDrawCommands在上一篇中已经在CacheMeshDrawCommands中被保存起来了，这里更像是做一个归类。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">MarkRelevant</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="comment">//...</span></span><br><span class="line">    <span class="keyword">for</span> (int32 StaticPrimIndex = <span class="number">0</span>, Num = RelevantStaticPrimitives.NumPrims; StaticPrimIndex &lt; Num; ++StaticPrimIndex)</span><br><span class="line">    &#123;</span><br><span class="line">        <span class="comment">//...</span></span><br><span class="line">        <span class="keyword">if</span> (StaticMeshRelevance.bUseForMaterial &amp;&amp; (ViewRelevance.bRenderInMainPass || ViewRelevance.bRenderCustomDepth))</span><br><span class="line">		&#123;</span><br><span class="line">            <span class="comment">//..</span></span><br><span class="line">				<span class="comment">// Specific logic for mobile packets</span></span><br><span class="line">				<span class="keyword">if</span> (ShadingPath == EShadingPath::Mobile)</span><br><span class="line">				&#123;</span><br><span class="line">					<span class="comment">// Skydome must not be added to base pass bucket</span></span><br><span class="line">					<span class="keyword">if</span> (!StaticMeshRelevance.bUseSkyMaterial)</span><br><span class="line">					&#123;</span><br><span class="line">                        <span class="comment">//添加到basepass的队列中</span></span><br><span class="line">						DrawCommandPacket.<span class="built_in">AddCommandsForMesh</span>(PrimitiveIndex, PrimitiveSceneInfo, StaticMeshRelevance, StaticMesh, Scene, bCanCache, EMeshPass::BasePass);</span><br><span class="line">						DrawCommandPacket.<span class="built_in">AddCommandsForMesh</span>(PrimitiveIndex, PrimitiveSceneInfo, StaticMeshRelevance, StaticMesh, Scene, bCanCache, EMeshPass::MobileBasePassCSM);</span><br><span class="line">					&#125;</span><br><span class="line">                   &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">AddCommandsForMesh</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function">    int32 PrimitiveIndex, </span></span></span><br><span class="line"><span class="params"><span class="function">    <span class="type">const</span> FPrimitiveSceneInfo* InPrimitiveSceneInfo,</span></span></span><br><span class="line"><span class="params"><span class="function">    <span class="type">const</span> FStaticMeshBatchRelevance&amp; RESTRICT StaticMeshRelevance, </span></span></span><br><span class="line"><span class="params"><span class="function">    <span class="type">const</span> FStaticMeshBatch&amp; RESTRICT StaticMesh, </span></span></span><br><span class="line"><span class="params"><span class="function">    <span class="type">const</span> FScene* RESTRICT Scene, </span></span></span><br><span class="line"><span class="params"><span class="function">    <span class="type">bool</span> bCanCache, </span></span></span><br><span class="line"><span class="params"><span class="function">    EMeshPass::Type PassType)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="type">const</span> EShadingPath ShadingPath = Scene-&gt;<span class="built_in">GetShadingPath</span>();</span><br><span class="line">    <span class="type">const</span> <span class="type">bool</span> bUseCachedMeshCommand = bUseCachedMeshDrawCommands</span><br><span class="line">       &amp;&amp; !!(FPassProcessorManager::<span class="built_in">GetPassFlags</span>(ShadingPath, PassType) &amp; EMeshPassFlags::CachedMeshCommands)</span><br><span class="line">       &amp;&amp; StaticMeshRelevance.bSupportsCachingMeshDrawCommands</span><br><span class="line">       &amp;&amp; bCanCache;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (bUseCachedMeshCommand)</span><br><span class="line">    &#123;</span><br><span class="line">       <span class="type">const</span> int32 StaticMeshCommandInfoIndex = StaticMeshRelevance.<span class="built_in">GetStaticMeshCommandInfoIndex</span>(PassType);</span><br><span class="line">       <span class="keyword">if</span> (StaticMeshCommandInfoIndex &gt;= <span class="number">0</span>)</span><br><span class="line">       &#123;</span><br><span class="line">          <span class="type">const</span> FCachedMeshDrawCommandInfo&amp; CachedMeshDrawCommand = InPrimitiveSceneInfo-&gt;StaticMeshCommandInfos[StaticMeshCommandInfoIndex];</span><br><span class="line">          <span class="type">const</span> FCachedPassMeshDrawList&amp; SceneDrawList = Scene-&gt;CachedDrawLists[PassType];</span><br><span class="line"></span><br><span class="line">          <span class="comment">// AddUninitialized_GetRef()</span></span><br><span class="line">           <span class="comment">//这里的MeshdrawCommands是根据pass来分类存储</span></span><br><span class="line">          VisibleCachedDrawCommands[(uint32)PassType].<span class="built_in">AddUninitialized</span>();</span><br><span class="line">          FVisibleMeshDrawCommand&amp; NewVisibleMeshDrawCommand = VisibleCachedDrawCommands[(uint32)PassType].<span class="built_in">Last</span>();</span><br><span class="line"></span><br><span class="line">          <span class="type">const</span> FMeshDrawCommand* MeshDrawCommand = CachedMeshDrawCommand.StateBucketId &gt;= <span class="number">0</span></span><br><span class="line">             ? &amp;Scene-&gt;CachedMeshDrawCommandStateBuckets[PassType].<span class="built_in">GetByElementId</span>(CachedMeshDrawCommand.StateBucketId).Key</span><br><span class="line">             : &amp;SceneDrawList.MeshDrawCommands[CachedMeshDrawCommand.CommandIndex];</span><br><span class="line"></span><br><span class="line">          NewVisibleMeshDrawCommand.<span class="built_in">Setup</span>(</span><br><span class="line">             MeshDrawCommand,</span><br><span class="line">             PrimitiveIndex,</span><br><span class="line">             PrimitiveIndex,</span><br><span class="line">             CachedMeshDrawCommand.StateBucketId,</span><br><span class="line">             CachedMeshDrawCommand.MeshFillMode,</span><br><span class="line">             CachedMeshDrawCommand.MeshCullMode,</span><br><span class="line">             CachedMeshDrawCommand.SortKey);</span><br><span class="line">       &#125;</span><br><span class="line">       </span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">else</span></span><br><span class="line">    &#123;</span><br><span class="line">       NumDynamicBuildRequestElements[PassType] += StaticMeshRelevance.NumElements;</span><br><span class="line">       DynamicBuildRequests[PassType].<span class="built_in">Add</span>(&amp;StaticMesh);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="RenderThreadFinalize"><a href="#RenderThreadFinalize" class="headerlink" title="RenderThreadFinalize"></a>RenderThreadFinalize</h3><p>​    这一步主要是做一些数据拷贝的操作，把Packet处理后的数据拷贝Packet中的数据成员，这里我们只关注MeshDrawCommands的转移，WriteViewCommands其实是ComputeViewVisibility调用时传入的参数，这个参数同样在SetupMeshPass中被用来存放动态绘制指令，</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">RenderThreadFinalize</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line"><span class="keyword">for</span> (int32 PassIndex = <span class="number">0</span>; PassIndex &lt; EMeshPass::Num; PassIndex++)</span><br><span class="line">		&#123;</span><br><span class="line">			FPassDrawCommandArray&amp; SrcCommands = DrawCommandPacket.VisibleCachedDrawCommands[PassIndex];</span><br><span class="line">			FMeshCommandOneFrameArray&amp; DstCommands = WriteViewCommands.MeshCommands[PassIndex];</span><br><span class="line">    		<span class="comment">//赋值静态绘制指令</span></span><br><span class="line">			<span class="keyword">if</span> (SrcCommands.<span class="built_in">Num</span>() &gt; <span class="number">0</span>)</span><br><span class="line">			&#123;</span><br><span class="line">				<span class="built_in">static_assert</span>(<span class="built_in">sizeof</span>(SrcCommands[<span class="number">0</span>]) == <span class="built_in">sizeof</span>(DstCommands[<span class="number">0</span>]), <span class="string">&quot;Memcpy sizes must match.&quot;</span>);</span><br><span class="line">				<span class="type">const</span> int32 PrevNum = DstCommands.<span class="built_in">AddUninitialized</span>(SrcCommands.<span class="built_in">Num</span>());</span><br><span class="line">				FMemory::<span class="built_in">Memcpy</span>(&amp;DstCommands[PrevNum], &amp;SrcCommands[<span class="number">0</span>], SrcCommands.<span class="built_in">Num</span>() * <span class="built_in">sizeof</span>(SrcCommands[<span class="number">0</span>]));</span><br><span class="line">			&#125;</span><br><span class="line">    		<span class="comment">//不支持缓存会放在这里，等到生成动态绘制指令时再生成</span></span><br><span class="line">    			FPassDrawCommandBuildRequestArray&amp; SrcRequests = DrawCommandPacket.DynamicBuildRequests[PassIndex];</span><br><span class="line">			TArray&lt;<span class="type">const</span> FStaticMeshBatch*, SceneRenderingAllocator&gt;&amp; DstRequests = WriteViewCommands.DynamicMeshCommandBuildRequests[PassIndex];</span><br><span class="line">			<span class="keyword">if</span> (SrcRequests.<span class="built_in">Num</span>() &gt; <span class="number">0</span>)</span><br><span class="line">			&#123;</span><br><span class="line">				<span class="built_in">static_assert</span>(<span class="built_in">sizeof</span>(SrcRequests[<span class="number">0</span>]) == <span class="built_in">sizeof</span>(DstRequests[<span class="number">0</span>]), <span class="string">&quot;Memcpy sizes must match.&quot;</span>);</span><br><span class="line">				<span class="type">const</span> int32 PrevNum = DstRequests.<span class="built_in">AddUninitialized</span>(SrcRequests.<span class="built_in">Num</span>());</span><br><span class="line">				FMemory::<span class="built_in">Memcpy</span>(&amp;DstRequests[PrevNum], &amp;SrcRequests[<span class="number">0</span>], SrcRequests.<span class="built_in">Num</span>() * <span class="built_in">sizeof</span>(SrcRequests[<span class="number">0</span>]));</span><br><span class="line">			&#125;</span><br><span class="line">&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="GatherDynamicMeshElements"><a href="#GatherDynamicMeshElements" class="headerlink" title="GatherDynamicMeshElements"></a>GatherDynamicMeshElements</h2><p>​    上一步在标记相关性后，动态相关性的primitive被保存在了OutHasDynamicEditorMeshElementsMasks结构中，这一步就是对动态相关性的primitive重新收集MeshBatch，内部调用了GetDynamicMeshElements来生成MeshBatch，这一步其实与静态绘制的primitive收集meshbatch的流程类似，GetDynamicMeshElements内部调用了统一的接口GetMeshElement，最终把meshbatch收集到参数Collector中，需要注意的是最后Collector收集MeshBatch的地方，在GatherDynamicMeshElements的开头部分Collector注册了View.DynamicMeshElements到MeshBatchs中，所以这里其实把MeshBatch按照View添加进了DynamicMeshElements数据结构，后面没有用到collector的原因正在于此。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">FMeshElementCollector::<span class="built_in">AddMesh</span>(int32 ViewIndex, FMeshBatch&amp; MeshBatch)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="comment">//...</span></span><br><span class="line">    	TArray&lt;FMeshBatchAndRelevance,SceneRenderingAllocator&gt;&amp; ViewMeshBatches = *MeshBatches[ViewIndex];</span><br><span class="line">	<span class="keyword">new</span> (ViewMeshBatches) <span class="built_in">FMeshBatchAndRelevance</span>(MeshBatch, PrimitiveSceneProxy, FeatureLevel);	</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="SetupMeshPass"><a href="#SetupMeshPass" class="headerlink" title="SetupMeshPass"></a>SetupMeshPass</h2><p>到这一步，我们回顾下现在拥有哪些数据：按照pass分类存储的静态绘制路径的MeshDrawCommands，动态绘制路径的MeshBatch。</p>
+<p>SetupMeshPass主要通过DispatchPassSetup，分发任务，来实现View.ParallelMeshDrawCommandPasses结构的填充，以便在后续执行对应Pass的时候提交MeshDrawCommands。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">FSceneRenderer::SetupMeshPass</span><span class="params">(FViewInfo&amp; View, FExclusiveDepthStencil::Type BasePassDepthStencilAccess, FViewCommands&amp; ViewCommands)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="type">const</span> EShadingPath ShadingPath = Scene-&gt;<span class="built_in">GetShadingPath</span>();</span><br><span class="line">    <span class="keyword">for</span> (int32 PassIndex = <span class="number">0</span>; PassIndex &lt; EMeshPass::Num; PassIndex++)</span><br><span class="line">    &#123;</span><br><span class="line">       <span class="type">const</span> EMeshPass::Type PassType = (EMeshPass::Type)PassIndex;</span><br><span class="line">       <span class="keyword">if</span> ((FPassProcessorManager::<span class="built_in">GetPassFlags</span>(ShadingPath, PassType) &amp; EMeshPassFlags::MainView) != EMeshPassFlags::None)</span><br><span class="line">       &#123;</span><br><span class="line">          <span class="comment">// Mobile: BasePass and MobileBasePassCSM lists need to be merged and sorted after shadow pass.</span></span><br><span class="line">          <span class="keyword">if</span> (ShadingPath == EShadingPath::Mobile &amp;&amp; (PassType == EMeshPass::BasePass || PassType == EMeshPass::MobileBasePassCSM))</span><br><span class="line">          &#123;</span><br><span class="line">             <span class="keyword">continue</span>;</span><br><span class="line">          &#125;</span><br><span class="line">          PassProcessorCreateFunction CreateFunction = FPassProcessorManager::<span class="built_in">GetCreateFunction</span>(ShadingPath, PassType);</span><br><span class="line">          FMeshPassProcessor* MeshPassProcessor = <span class="built_in">CreateFunction</span>(Scene, &amp;View, <span class="literal">nullptr</span>);</span><br><span class="line"></span><br><span class="line">          FParallelMeshDrawCommandPass&amp; Pass = View.ParallelMeshDrawCommandPasses[PassIndex];</span><br><span class="line">          Pass.<span class="built_in">DispatchPassSetup</span>(</span><br><span class="line">             Scene,</span><br><span class="line">             View,</span><br><span class="line">             PassType,</span><br><span class="line">             BasePassDepthStencilAccess,</span><br><span class="line">             MeshPassProcessor,</span><br><span class="line">             View.DynamicMeshElements,</span><br><span class="line">             &amp;View.DynamicMeshElementsPassRelevance,</span><br><span class="line">             View.NumVisibleDynamicMeshElements[PassType],</span><br><span class="line">             ViewCommands.DynamicMeshCommandBuildRequests[PassType],</span><br><span class="line">             ViewCommands.NumDynamicMeshCommandBuildRequestElements[PassType],</span><br><span class="line">             ViewCommands.MeshCommands[PassIndex]);</span><br><span class="line">       &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>DispatchPassSetup内部会设置FMeshDrawCommandPassSetupTaskContext的数据，然后多线程执行FMeshDrawCommandPassSetupTask，我们看下Task的内部实现</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">AnyThreadTask</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="comment">// Mobile base pass is a special case, as final lists is created from two mesh passes based on CSM visibility.</span></span><br><span class="line">    <span class="type">const</span> <span class="type">bool</span> bMobileShadingBasePass = Context.ShadingPath == EShadingPath::Mobile &amp;&amp; Context.PassType == EMeshPass::BasePass;</span><br><span class="line">    <span class="comment">// On SM5 Mobile platform, still want the same sorting</span></span><br><span class="line">    <span class="type">const</span> <span class="type">bool</span> bMobileVulkanSM5BasePass = <span class="built_in">IsVulkanMobileSM5Platform</span>(Context.ShaderPlatform) &amp;&amp; Context.PassType == EMeshPass::BasePass;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (bMobileShadingBasePass)</span><br><span class="line">    &#123;</span><br><span class="line">       <span class="built_in">MergeMobileBasePassMeshDrawCommands</span>(</span><br><span class="line">          Context.View-&gt;MobileCSMVisibilityInfo,</span><br><span class="line">          Context.PrimitiveBounds-&gt;<span class="built_in">Num</span>(),</span><br><span class="line">          Context.MeshDrawCommands,</span><br><span class="line">          Context.MobileBasePassCSMMeshDrawCommands</span><br><span class="line">       );</span><br><span class="line"></span><br><span class="line">       <span class="built_in">GenerateMobileBasePassDynamicMeshDrawCommands</span>(</span><br><span class="line">          *Context.View,</span><br><span class="line">          Context.ShadingPath,</span><br><span class="line">          Context.PassType,</span><br><span class="line">          Context.MeshPassProcessor,</span><br><span class="line">          Context.MobileBasePassCSMMeshPassProcessor,</span><br><span class="line">          *Context.DynamicMeshElements,</span><br><span class="line">          Context.DynamicMeshElementsPassRelevance,</span><br><span class="line">          Context.NumDynamicMeshElements,</span><br><span class="line">          Context.DynamicMeshCommandBuildRequests,</span><br><span class="line">          Context.NumDynamicMeshCommandBuildRequestElements,</span><br><span class="line">          Context.MeshDrawCommands,</span><br><span class="line">          Context.MeshDrawCommandStorage,</span><br><span class="line">          Context.MinimalPipelineStatePassSet,</span><br><span class="line">          Context.NeedsShaderInitialisation</span><br><span class="line">       );</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">else</span></span><br><span class="line">    &#123;</span><br><span class="line">       <span class="built_in">GenerateDynamicMeshDrawCommands</span>(</span><br><span class="line">          *Context.View,</span><br><span class="line">          Context.ShadingPath,</span><br><span class="line">          Context.PassType,</span><br><span class="line">          Context.MeshPassProcessor,</span><br><span class="line">          *Context.DynamicMeshElements,</span><br><span class="line">          Context.DynamicMeshElementsPassRelevance,</span><br><span class="line">          Context.NumDynamicMeshElements,</span><br><span class="line">          Context.DynamicMeshCommandBuildRequests,</span><br><span class="line">          Context.NumDynamicMeshCommandBuildRequestElements,</span><br><span class="line">          Context.MeshDrawCommands,</span><br><span class="line">          Context.MeshDrawCommandStorage,</span><br><span class="line">          Context.MinimalPipelineStatePassSet,</span><br><span class="line">          Context.NeedsShaderInitialisation</span><br><span class="line">       );</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (Context.MeshDrawCommands.<span class="built_in">Num</span>() &gt; <span class="number">0</span>)</span><br><span class="line">    &#123;</span><br><span class="line">       <span class="keyword">if</span> (Context.PassType != EMeshPass::Num)</span><br><span class="line">       &#123;</span><br><span class="line">          <span class="built_in">ApplyViewOverridesToMeshDrawCommands</span>(</span><br><span class="line">             Context.ShadingPath,</span><br><span class="line">             Context.PassType,</span><br><span class="line">             Context.bReverseCulling,</span><br><span class="line">             Context.bRenderSceneTwoSided,</span><br><span class="line">             Context.BasePassDepthStencilAccess,</span><br><span class="line">             Context.DefaultBasePassDepthStencilAccess,</span><br><span class="line">             Context.MeshDrawCommands,</span><br><span class="line">             Context.MeshDrawCommandStorage,</span><br><span class="line">             Context.MinimalPipelineStatePassSet,</span><br><span class="line">             Context.NeedsShaderInitialisation,</span><br><span class="line">             Context.TempVisibleMeshDrawCommands</span><br><span class="line">          );</span><br><span class="line">       &#125;</span><br><span class="line"></span><br><span class="line">       <span class="comment">// Update sort keys.</span></span><br><span class="line">       <span class="keyword">if</span> (bMobileShadingBasePass || bMobileVulkanSM5BasePass)</span><br><span class="line">       &#123;</span><br><span class="line">          <span class="built_in">UpdateMobileBasePassMeshSortKeys</span>(</span><br><span class="line">             Context.ViewOrigin,</span><br><span class="line">             *Context.PrimitiveBounds,</span><br><span class="line">             Context.MeshDrawCommands</span><br><span class="line">             );</span><br><span class="line">       &#125;</span><br><span class="line">       <span class="keyword">else</span> <span class="keyword">if</span> (Context.TranslucencyPass != ETranslucencyPass::TPT_MAX)</span><br><span class="line">       &#123;</span><br><span class="line">          <span class="built_in">UpdateTranslucentMeshSortKeys</span>(</span><br><span class="line">             Context.TranslucentSortPolicy,</span><br><span class="line">             Context.TranslucentSortAxis,</span><br><span class="line">             Context.ViewOrigin,</span><br><span class="line">             Context.ViewMatrix,</span><br><span class="line">             *Context.PrimitiveBounds,</span><br><span class="line">             Context.TranslucencyPass,</span><br><span class="line">             Context.MeshDrawCommands</span><br><span class="line">          );</span><br><span class="line">       &#125;</span><br><span class="line"></span><br><span class="line">       &#123;</span><br><span class="line">          <span class="built_in">QUICK_SCOPE_CYCLE_COUNTER</span>(STAT_SortVisibleMeshDrawCommands);</span><br><span class="line">          Context.MeshDrawCommands.<span class="built_in">Sort</span>(<span class="built_in">FCompareFMeshDrawCommands</span>());</span><br><span class="line">       &#125;</span><br><span class="line"></span><br><span class="line">       <span class="keyword">if</span> (Context.bUseGPUScene)</span><br><span class="line">       &#123;</span><br><span class="line">          <span class="built_in">BuildMeshDrawCommandPrimitiveIdBuffer</span>(</span><br><span class="line">             Context.bDynamicInstancing,</span><br><span class="line">             Context.MeshDrawCommands,</span><br><span class="line">             Context.MeshDrawCommandStorage,</span><br><span class="line">             Context.PrimitiveIdBufferData,</span><br><span class="line">             Context.PrimitiveIdBufferDataSize,</span><br><span class="line">             Context.TempVisibleMeshDrawCommands,</span><br><span class="line">             Context.MaxInstances,</span><br><span class="line">             Context.VisibleMeshDrawCommandsNum,</span><br><span class="line">             Context.NewPassVisibleMeshDrawCommandsNum,</span><br><span class="line">             Context.ShaderPlatform,</span><br><span class="line">             Context.InstanceFactor</span><br><span class="line">          );</span><br><span class="line">       &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>​    Task主要实现以下几点：</p>
+<ol>
+<li>GenerateDynamicMeshDrawCommands</li>
+<li>ApplyViewOverridesToMeshDrawCommands</li>
+<li>Update/SortMeshDrawCommands</li>
+<li>BuildMeshDrawCommandPrimitiveIdBuffer</li>
+</ol>
+<h3 id="GenerateDynamicMeshDrawCommands"><a href="#GenerateDynamicMeshDrawCommands" class="headerlink" title="GenerateDynamicMeshDrawCommands"></a>GenerateDynamicMeshDrawCommands</h3><p>​    这一步和上一篇的CacheMeshDrawCommands处理基本一致，都是通过processor处理MeshBatch生成MeshDrawCommands，生成的MeshDrawCommands会被收集到函数开头填入Context的VisibleCommands中，而这个VisibleCommands经过层层传递，其实就是SetupMeshPass传入的最后一个参数，与RenderThreadFinalize中存储静态指令的结构相同，这样就把静态和动态绘制指令保存在一起，可以发现这个参数变量在ComputeViewVisibility之后就没有被其他地方使用，答案就在DispatchPassSetup中，对应Pass的FMeshCommandOneFrameArray数据结构被MemSwap给了对应Pass的TaskContext，在后续提交渲染指令时，Pass会直接拿Task内的指令来提交。</p>
+<p>​    另外这里里的数据来源是GatherDynamicMeshElements中收集来的MeshBatch，但是还有DynamicMeshCommandBuildRequests，这个是在把静态绘制指令按照Pass存储的时候，如果当前Pass不支持缓存，那就不会放在CacheCommands中，而是放在BuildRequests里。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">GenerateDynamicMeshDrawCommands</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function">    <span class="type">const</span> FViewInfo&amp; View,</span></span></span><br><span class="line"><span class="params"><span class="function">    EShadingPath ShadingPath,</span></span></span><br><span class="line"><span class="params"><span class="function">    EMeshPass::Type PassType,</span></span></span><br><span class="line"><span class="params"><span class="function">    FMeshPassProcessor* PassMeshProcessor,</span></span></span><br><span class="line"><span class="params"><span class="function">    <span class="type">const</span> TArray&lt;FMeshBatchAndRelevance, SceneRenderingAllocator&gt;&amp; DynamicMeshElements,</span></span></span><br><span class="line"><span class="params"><span class="function">    <span class="type">const</span> TArray&lt;FMeshPassMask, SceneRenderingAllocator&gt;* DynamicMeshElementsPassRelevance,</span></span></span><br><span class="line"><span class="params"><span class="function">    int32 MaxNumDynamicMeshElements,</span></span></span><br><span class="line"><span class="params"><span class="function">    <span class="type">const</span> TArray&lt;<span class="type">const</span> FStaticMeshBatch*, SceneRenderingAllocator&gt;&amp; DynamicMeshCommandBuildRequests,</span></span></span><br><span class="line"><span class="params"><span class="function">    int32 MaxNumBuildRequestElements,</span></span></span><br><span class="line"><span class="params"><span class="function">    FMeshCommandOneFrameArray&amp; VisibleCommands,</span></span></span><br><span class="line"><span class="params"><span class="function">    FDynamicMeshDrawCommandStorage&amp; MeshDrawCommandStorage,</span></span></span><br><span class="line"><span class="params"><span class="function">    FGraphicsMinimalPipelineStateSet&amp; MinimalPipelineStatePassSet,</span></span></span><br><span class="line"><span class="params"><span class="function">    <span class="type">bool</span>&amp; NeedsShaderInitialisation</span></span></span><br><span class="line"><span class="params"><span class="function">)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="built_in">QUICK_SCOPE_CYCLE_COUNTER</span>(STAT_GenerateDynamicMeshDrawCommands);</span><br><span class="line">    <span class="built_in">check</span>(PassMeshProcessor);</span><br><span class="line">    <span class="built_in">check</span>((PassType == EMeshPass::Num) == (DynamicMeshElementsPassRelevance == <span class="literal">nullptr</span>));</span><br><span class="line"></span><br><span class="line">    <span class="function">FDynamicPassMeshDrawListContext <span class="title">DynamicPassMeshDrawListContext</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function">       MeshDrawCommandStorage,</span></span></span><br><span class="line"><span class="params"><span class="function">       VisibleCommands,</span></span></span><br><span class="line"><span class="params"><span class="function">       MinimalPipelineStatePassSet,</span></span></span><br><span class="line"><span class="params"><span class="function">       NeedsShaderInitialisation</span></span></span><br><span class="line"><span class="params"><span class="function">    )</span></span>;</span><br><span class="line">    PassMeshProcessor-&gt;<span class="built_in">SetDrawListContext</span>(&amp;DynamicPassMeshDrawListContext);</span><br><span class="line"></span><br><span class="line">    &#123;</span><br><span class="line">       <span class="type">const</span> int32 NumCommandsBefore = VisibleCommands.<span class="built_in">Num</span>();</span><br><span class="line">       <span class="type">const</span> int32 NumDynamicMeshBatches = DynamicMeshElements.<span class="built_in">Num</span>();</span><br><span class="line"></span><br><span class="line">       <span class="keyword">for</span> (int32 MeshIndex = <span class="number">0</span>; MeshIndex &lt; NumDynamicMeshBatches; MeshIndex++)</span><br><span class="line">       &#123;</span><br><span class="line">          <span class="keyword">if</span> (!DynamicMeshElementsPassRelevance || (*DynamicMeshElementsPassRelevance)[MeshIndex].<span class="built_in">Get</span>(PassType))</span><br><span class="line">          &#123;</span><br><span class="line">             <span class="type">const</span> FMeshBatchAndRelevance&amp; MeshAndRelevance = DynamicMeshElements[MeshIndex];</span><br><span class="line">             <span class="type">const</span> uint64 BatchElementMask = ~<span class="number">0ull</span>;</span><br><span class="line"></span><br><span class="line">             PassMeshProcessor-&gt;<span class="built_in">AddMeshBatch</span>(*MeshAndRelevance.Mesh, BatchElementMask, MeshAndRelevance.PrimitiveSceneProxy);</span><br><span class="line">          &#125;</span><br><span class="line">       &#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    &#123;</span><br><span class="line">       <span class="type">const</span> int32 NumCommandsBefore = VisibleCommands.<span class="built_in">Num</span>();</span><br><span class="line">       <span class="type">const</span> int32 NumStaticMeshBatches = DynamicMeshCommandBuildRequests.<span class="built_in">Num</span>();</span><br><span class="line">       <span class="keyword">for</span> (int32 MeshIndex = <span class="number">0</span>; MeshIndex &lt; NumStaticMeshBatches; MeshIndex++)</span><br><span class="line">       &#123;</span><br><span class="line">          <span class="type">const</span> FStaticMeshBatch* StaticMeshBatch = DynamicMeshCommandBuildRequests[MeshIndex];</span><br><span class="line">          <span class="type">const</span> uint64 DefaultBatchElementMask = ~<span class="number">0ul</span>;</span><br><span class="line">          PassMeshProcessor-&gt;<span class="built_in">AddMeshBatch</span>(*StaticMeshBatch, DefaultBatchElementMask, StaticMeshBatch-&gt;PrimitiveSceneInfo-&gt;Proxy, StaticMeshBatch-&gt;Id);</span><br><span class="line">       &#125;</span><br><span class="line"></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="ApplyViewOverridesToMeshDrawCommands"><a href="#ApplyViewOverridesToMeshDrawCommands" class="headerlink" title="ApplyViewOverridesToMeshDrawCommands"></a>ApplyViewOverridesToMeshDrawCommands</h3><p>​    这一步是根据View的一些特殊需求，重新设置MeshDrawCommands的pipeline状态。</p>
+<h3 id="Update-SortMeshDrawCommands"><a href="#Update-SortMeshDrawCommands" class="headerlink" title="Update/SortMeshDrawCommands"></a>Update/SortMeshDrawCommands</h3><p>​    至此，动态/静态MeshDrawCommands已经全部存储在Pass对应的TaskContext.MeshDrawCommands下，但是我们需要对透明/不透明的MeshDrawCommands进行排序。</p>
+<p>​    首先要更新MeshDrawCommands的SortKeys，然后根据Key排序。有三种排序方式：物体与视角中心距离，沿着某个轴排序，投影深度排序。排序结果会存储在FMeshDrawCommandSortKey中，其是由一个uint64的union来实现，有三种情况：BassPass，透明Pass，通用Pass。根据位域高低位不同来实现大小比较，先声明的位域是低位，比如对于透明Pass来说，先比较优先级（高位），然后是距离，最后是同一个Primitive的不同MeshID。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">UpdateTranslucentMeshSortKeys</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function">	ETranslucentSortPolicy::Type TranslucentSortPolicy,</span></span></span><br><span class="line"><span class="params"><span class="function">	<span class="type">const</span> FVector&amp; TranslucentSortAxis,</span></span></span><br><span class="line"><span class="params"><span class="function">	<span class="type">const</span> FVector&amp; ViewOrigin,</span></span></span><br><span class="line"><span class="params"><span class="function">	<span class="type">const</span> FMatrix&amp; ViewMatrix,</span></span></span><br><span class="line"><span class="params"><span class="function">	<span class="type">const</span> TArray&lt;<span class="keyword">struct</span> FPrimitiveBounds&gt;&amp; PrimitiveBounds,</span></span></span><br><span class="line"><span class="params"><span class="function">	ETranslucencyPass::Type TranslucencyPass, </span></span></span><br><span class="line"><span class="params"><span class="function">	FMeshCommandOneFrameArray&amp; VisibleMeshCommands</span></span></span><br><span class="line"><span class="params"><span class="function">	)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	<span class="built_in">QUICK_SCOPE_CYCLE_COUNTER</span>(STAT_UpdateTranslucentMeshSortKeys);</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> (int32 CommandIndex = <span class="number">0</span>; CommandIndex &lt; VisibleMeshCommands.<span class="built_in">Num</span>(); ++CommandIndex)</span><br><span class="line">	&#123;</span><br><span class="line">		FVisibleMeshDrawCommand&amp; VisibleCommand = VisibleMeshCommands[CommandIndex];</span><br><span class="line"></span><br><span class="line">		<span class="type">const</span> int32 PrimitiveIndex = VisibleCommand.ScenePrimitiveId;</span><br><span class="line">		<span class="type">const</span> FVector BoundsOrigin = PrimitiveIndex &gt;= <span class="number">0</span> ? PrimitiveBounds[PrimitiveIndex].BoxSphereBounds.Origin : FVector::ZeroVector;</span><br><span class="line"></span><br><span class="line">		<span class="type">float</span> Distance = <span class="number">0.0f</span>;</span><br><span class="line">		<span class="keyword">if</span> (TranslucentSortPolicy == ETranslucentSortPolicy::SortByDistance)</span><br><span class="line">		&#123;</span><br><span class="line">			<span class="comment">//sort based on distance to the view position, view rotation is not a factor</span></span><br><span class="line">			Distance = (BoundsOrigin - ViewOrigin).<span class="built_in">Size</span>();</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">else</span> <span class="keyword">if</span> (TranslucentSortPolicy == ETranslucentSortPolicy::SortAlongAxis)</span><br><span class="line">		&#123;</span><br><span class="line">			<span class="comment">// Sort based on enforced orthogonal distance</span></span><br><span class="line">			<span class="type">const</span> FVector CameraToObject = BoundsOrigin - ViewOrigin;</span><br><span class="line">			Distance = FVector::<span class="built_in">DotProduct</span>(CameraToObject, TranslucentSortAxis);</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">else</span></span><br><span class="line">		&#123;</span><br><span class="line">			<span class="comment">// Sort based on projected Z distance</span></span><br><span class="line">			<span class="built_in">check</span>(TranslucentSortPolicy == ETranslucentSortPolicy::SortByProjectedZ);</span><br><span class="line">			Distance = ViewMatrix.<span class="built_in">TransformPosition</span>(BoundsOrigin).Z;</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		<span class="comment">// Patch distance inside translucent mesh sort key.</span></span><br><span class="line">		FMeshDrawCommandSortKey SortKey;</span><br><span class="line">		SortKey.PackedData = VisibleCommand.SortKey.PackedData;</span><br><span class="line">		SortKey.Translucent.Distance = (uint32)~<span class="built_in">BitInvertIfNegativeFloat</span>(*((uint32*)&amp;Distance));</span><br><span class="line">		VisibleCommand.SortKey.PackedData = SortKey.PackedData;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">RENDERER_API</span> FMeshDrawCommandSortKey</span><br><span class="line">&#123;</span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">	<span class="keyword">union</span> </span><br><span class="line">	&#123;</span><br><span class="line">		uint64 PackedData;</span><br><span class="line"></span><br><span class="line">		<span class="keyword">struct</span></span><br><span class="line">		&#123;</span><br><span class="line">			uint64 VertexShaderHash		: <span class="number">16</span>; <span class="comment">// Order by vertex shader&#x27;s hash.</span></span><br><span class="line">			uint64 PixelShaderHash		: <span class="number">32</span>; <span class="comment">// Order by pixel shader&#x27;s hash.</span></span><br><span class="line">			uint64 Masked				: <span class="number">16</span>; <span class="comment">// First order by masked.</span></span><br><span class="line">		&#125; BasePass;</span><br><span class="line"></span><br><span class="line">		<span class="keyword">struct</span></span><br><span class="line">		&#123;</span><br><span class="line">			uint64 MeshIdInPrimitive	: <span class="number">16</span>; <span class="comment">// Order meshes belonging to the same primitive by a stable id.</span></span><br><span class="line">			uint64 Distance				: <span class="number">32</span>; <span class="comment">// Order by distance.</span></span><br><span class="line">			uint64 Priority				: <span class="number">16</span>; <span class="comment">// First order by priority.</span></span><br><span class="line">		&#125; Translucent;</span><br><span class="line"></span><br><span class="line">		<span class="keyword">struct</span> </span><br><span class="line">		&#123;</span><br><span class="line">			uint64 VertexShaderHash : <span class="number">32</span>;	<span class="comment">// Order by vertex shader&#x27;s hash.</span></span><br><span class="line">			uint64 PixelShaderHash : <span class="number">32</span>;	<span class="comment">// First order by pixel shader&#x27;s hash.</span></span><br><span class="line">		&#125; Generic;</span><br><span class="line">	&#125;;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="BuildMeshDrawCommandPrimitiveIdBuffer"><a href="#BuildMeshDrawCommandPrimitiveIdBuffer" class="headerlink" title="BuildMeshDrawCommandPrimitiveIdBuffer"></a>BuildMeshDrawCommandPrimitiveIdBuffer</h3><p>这一步主要是为了合批，在GPUScene中有讲，主要是将相同渲染此处不展开。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/UE%E6%BA%90%E7%A0%81/" rel="tag"># UE源码</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2024/06/18/renderworkflow_data/" rel="prev" title="UE渲染工作流(一)——数据篇">
+      <i class="fa fa-chevron-left"></i> UE渲染工作流(一)——数据篇
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2024/07/28/HISM/" rel="next" title="HISM">
+      HISM <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#UE%E6%B8%B2%E6%9F%93%E5%B7%A5%E4%BD%9C%E6%B5%81-%E4%BA%8C-%E2%80%94%E2%80%94%E5%8F%AF%E8%A7%81%E6%80%A7%E7%AF%87"><span class="nav-number">1.</span> <span class="nav-text">UE渲染工作流(二)——可见性篇</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#FrustumCull"><span class="nav-number">1.1.</span> <span class="nav-text">FrustumCull</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#ComputeAndMarkRelevanceForViewParallel"><span class="nav-number">1.2.</span> <span class="nav-text">ComputeAndMarkRelevanceForViewParallel</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#ComputeRelevance"><span class="nav-number">1.2.1.</span> <span class="nav-text">ComputeRelevance</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#MarkRelevant"><span class="nav-number">1.2.2.</span> <span class="nav-text">MarkRelevant</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#RenderThreadFinalize"><span class="nav-number">1.2.3.</span> <span class="nav-text">RenderThreadFinalize</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#GatherDynamicMeshElements"><span class="nav-number">1.3.</span> <span class="nav-text">GatherDynamicMeshElements</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#SetupMeshPass"><span class="nav-number">1.4.</span> <span class="nav-text">SetupMeshPass</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#GenerateDynamicMeshDrawCommands"><span class="nav-number">1.4.1.</span> <span class="nav-text">GenerateDynamicMeshDrawCommands</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ApplyViewOverridesToMeshDrawCommands"><span class="nav-number">1.4.2.</span> <span class="nav-text">ApplyViewOverridesToMeshDrawCommands</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Update-SortMeshDrawCommands"><span class="nav-number">1.4.3.</span> <span class="nav-text">Update&#x2F;SortMeshDrawCommands</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#BuildMeshDrawCommandPrimitiveIdBuffer"><span class="nav-number">1.4.4.</span> <span class="nav-text">BuildMeshDrawCommandPrimitiveIdBuffer</span></a></li></ol></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Ritchie"
+      src="/images/avatar.jpg">
+  <p class="site-author-name" itemprop="name">Ritchie</p>
+  <div class="site-description" itemprop="description">Engine/Graphics 爱好者 做人没有梦想,那和咸鱼有什么区别</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">14</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">2</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2025</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Ritchie</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-area"></i>
+    </span>
+      <span class="post-meta-item-text">站点总字数：</span>
+    <span title="站点总字数">27k</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+      <span class="post-meta-item-text">站点阅读时长 &asymp;</span>
+    <span title="站点阅读时长">1:40</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js"></script>
+  <script src="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+
+<script>
+  if (typeof MathJax === 'undefined') {
+    window.MathJax = {
+      loader: {
+        source: {
+          '[tex]/amsCd': '[tex]/amscd',
+          '[tex]/AMScd': '[tex]/amscd'
+        }
+      },
+      tex: {
+        inlineMath: {'[+]': [['$', '$']]},
+        tags: 'ams'
+      },
+      options: {
+        renderActions: {
+          findScript: [10, doc => {
+            document.querySelectorAll('script[type^="math/tex"]').forEach(node => {
+              const display = !!node.type.match(/; *mode=display/);
+              const math = new doc.options.MathItem(node.textContent, doc.inputJax[0], display);
+              const text = document.createTextNode('');
+              node.parentNode.replaceChild(text, node);
+              math.start = {node: text, delim: '', n: 0};
+              math.end = {node: text, delim: '', n: 0};
+              doc.math.push(math);
+            });
+          }, '', false],
+          insertedScript: [200, () => {
+            document.querySelectorAll('mjx-container').forEach(node => {
+              let target = node.parentNode;
+              if (target.nodeName.toLowerCase() === 'li') {
+                target.parentNode.classList.add('has-jax');
+              }
+            });
+          }, '', false]
+        }
+      }
+    };
+    (function () {
+      var script = document.createElement('script');
+      script.src = '//cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js';
+      script.defer = true;
+      document.head.appendChild(script);
+    })();
+  } else {
+    MathJax.startup.document.state(0);
+    MathJax.texReset();
+    MathJax.typeset();
+  }
+</script>
+
+    
+
+  
+
+</body>
+</html>

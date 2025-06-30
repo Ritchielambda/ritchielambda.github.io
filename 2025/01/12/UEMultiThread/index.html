@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 7.1.1">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"ritchielambda.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":true,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="UEMultiThreadTQueue需要模板参数指定是单&#x2F;多生产者 入队和出队都是靠new和delete，所以不用考虑CAS，没有对象复用。 效率不高，size是16字节对齐，所以会经过L3缓存？">
+<meta property="og:type" content="article">
+<meta property="og:title" content="UEMultiThread">
+<meta property="og:url" content="https://ritchielambda.github.io/2025/01/12/UEMultiThread/index.html">
+<meta property="og:site_name" content="Ritchie&#39;s Blog">
+<meta property="og:description" content="UEMultiThreadTQueue需要模板参数指定是单&#x2F;多生产者 入队和出队都是靠new和delete，所以不用考虑CAS，没有对象复用。 效率不高，size是16字节对齐，所以会经过L3缓存？">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://ritchielambda.github.io/2025/01/12/UEMultiThread/multithread.drawio.png">
+<meta property="og:image" content="https://ritchielambda.github.io/2025/01/12/UEMultiThread/TTask.drawio.png">
+<meta property="og:image" content="https://ritchielambda.github.io/2025/01/12/UEMultiThread/taskimpletion.drawio.png">
+<meta property="article:published_time" content="2025-01-12T00:00:00.000Z">
+<meta property="article:modified_time" content="2025-06-30T15:40:06.389Z">
+<meta property="article:author" content="Ritchie">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://ritchielambda.github.io/2025/01/12/UEMultiThread/multithread.drawio.png">
+
+<link rel="canonical" href="https://ritchielambda.github.io/2025/01/12/UEMultiThread/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>UEMultiThread | Ritchie's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+<link rel="alternate" href="/atom.xml" title="Ritchie's Blog" type="application/atom+xml">
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Ritchie's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://ritchielambda.github.io/2025/01/12/UEMultiThread/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpg">
+      <meta itemprop="name" content="Ritchie">
+      <meta itemprop="description" content="Engine/Graphics 爱好者 做人没有梦想,那和咸鱼有什么区别">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Ritchie's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          UEMultiThread
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2025-01-12 00:00:00" itemprop="dateCreated datePublished" datetime="2025-01-12T00:00:00+00:00">2025-01-12</time>
+            </span>
+
+          
+            <span class="post-meta-item" title="本文字数">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+              <span>1.6k</span>
+            </span>
+            <span class="post-meta-item" title="阅读时长">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+              <span>6 分钟</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="UEMultiThread"><a href="#UEMultiThread" class="headerlink" title="UEMultiThread"></a>UEMultiThread</h1><h2 id="TQueue"><a href="#TQueue" class="headerlink" title="TQueue"></a>TQueue</h2><p>需要模板参数指定是单/多生产者</p>
+<p>入队和出队都是靠new和delete，所以不用考虑CAS，没有对象复用。</p>
+<p>效率不高，size是16字节对齐，所以会经过L3缓存？</p>
+<span id="more"></span>
+<p>LockFreeList</p>
+<p>完美的无锁容器，也是TaskGraph的基础容器</p>
+<p>CAS 本身不可靠，因为只靠一个节点值没法判断节点后面的值没有被修改，所以要加入版本号，也就是计数器的操作来统计节点被操作的次数，即Lockfreelist里的Counter</p>
+<p>节点指针：</p>
+<p>FIndexPointer是最最基础的一个数据结构，用来做节点的CAS状态和指针。</p>
+<p>LIFO是一个无锁的队列，啥都没有。</p>
+<p>LockFreeLinkPolicy是把节点重命名了一下，然后实现了节点的分配和回收接口。AllocLockFreeLink和FreeLockFreeLink，分配接口底层需要调用分配器，分配器就是LockFreeLinkAllocator_TLSCache。</p>
+<p>而这个分配器里面push和pop操作其实都是通过FLockFreePointerListLIFORoot实现的一个无锁的栈来操作存储，而Root其实也并不能申请内存，只是用来存储，真正申请内存的是FLockFreeLinkPolicy::LinkAllocator也就是TLockFreeAllocOnceIndexedAllocator，会一次申请一大片buffer，然后分item提供需要的内存。</p>
+<p>LIFOBase则是把上面的都包了一层，push和pop还是走的FLockFreeLinkPolicy分配，然后用LIFOroot实现一个存储最终保存线程的队列是FStallingTaskQueue，调用push会返回一个可用的线程，并且把对应的state置为0。pop相反。</p>
+<p>UE5扩充了26位的限制。</p>
+<h2 id="TaskGraph"><a href="#TaskGraph" class="headerlink" title="TaskGraph"></a>TaskGraph</h2><h2 id="一次完整任务的执行流程"><a href="#一次完整任务的执行流程" class="headerlink" title="一次完整任务的执行流程"></a>一次完整任务的执行流程</h2><p>​    TaskGraph是一个高效利用多线程处理外部任务及其关联任务的框架，一次任务的提交处理大致流程如下图：</p>
+<p><img src="/2025/01/12/UEMultiThread/multithread.drawio.png" alt="multithread.drawio"></p>
+<ul>
+<li>构造Task</li>
+<li>分配Task到任务队列</li>
+<li>唤醒线程执行Task</li>
+<li>处理Task依赖及后续Task</li>
+</ul>
+<h3 id="TGraphTask"><a href="#TGraphTask" class="headerlink" title="TGraphTask"></a>TGraphTask</h3><p><img src="/2025/01/12/UEMultiThread/TTask.drawio.png" alt="TTask.drawio"></p>
+<p>​    TBaseGraphTask是TaskGraphInterface中处理任务的对象类，它的子类包含了对应的构造成员FConstructor，SubSequents后续依赖任务对象，TaskStorage则是模板指定类，也是真正外部传入要执行的任务类。</p>
+<h3 id="分配任务-amp-唤醒进程"><a href="#分配任务-amp-唤醒进程" class="headerlink" title="分配任务&amp;唤醒进程"></a>分配任务&amp;唤醒进程</h3><p>这里真正分配任务调用的就是ConstructAndDisPatchWhenReady，这个接口首先会把TGraphTask上一节提到的成员先填充好，以便后面执行任务时处理后续依赖的任务。然后判断如果当前任务的前置依赖任务都执行完了的话，就把当前任务放入TaskGraph队列中。</p>
+<p>放入队列的入口在QueueTassk，这里实际上调用的是FTaskGraphImplementation的全局单例，也是TaskGraph的子类（实现类）。QueueTask首先会计算两个优先级：队列优先级和任务优先级。在FTaskGraphImplementation中维护了一个任务队列数组，共三个队列（对应队列优先级），每个FStallingTaskQueue队列里又有两个小队列（对应任务优先级）。</p>
+<p>这里的两个优先级都是通过Task的ThreadToExecuteOn成员的对应位Mask得到的，而这个成员是在构造TGraphTask的时候填充的，基类默认赋值为AnyThread。</p>
+<p>然后唤醒线程执行队列中的任务，这里是通过FStallingTaskQueue::Push来得到唤醒的线程Index。</p>
+<p>为了避免线程冲突，这里会把分配线程的MasterState先读取到本地线程执行然后再赋值回去。</p>
+<p>MasterState就是上面提到的FIndexPointer，一共64位，其中26位用来做线程分配，位为1时线程空闲，反之繁忙。可以注意到，如果回写MasterState的时候发生冲突，就会重新读取最新的State找到新的线程。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">int32 <span class="title">Push</span><span class="params">(T* InPayload, uint32 Priority)</span></span></span><br><span class="line"><span class="function">	</span>&#123;</span><br><span class="line">		<span class="built_in">checkLockFreePointerList</span>(Priority &lt; NumPriorities);</span><br><span class="line">		TDoublePtr LocalMasterState;</span><br><span class="line">		LocalMasterState.<span class="built_in">AtomicRead</span>(MasterState);</span><br><span class="line">		PriorityQueues[Priority].<span class="built_in">Push</span>(InPayload);</span><br><span class="line">		TDoublePtr NewMasterState;</span><br><span class="line">		NewMasterState.<span class="built_in">AdvanceCounterAndState</span>(LocalMasterState, <span class="number">1</span>);</span><br><span class="line">		int32 ThreadToWake = <span class="built_in">FindThreadToWake</span>(LocalMasterState.<span class="built_in">GetPtr</span>());</span><br><span class="line">		<span class="keyword">if</span> (ThreadToWake &gt;= <span class="number">0</span>)</span><br><span class="line">		&#123;</span><br><span class="line">			NewMasterState.<span class="built_in">SetPtr</span>(<span class="built_in">TurnOffBit</span>(LocalMasterState.<span class="built_in">GetPtr</span>(), ThreadToWake));</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">else</span></span><br><span class="line">		&#123;</span><br><span class="line">			NewMasterState.<span class="built_in">SetPtr</span>(LocalMasterState.<span class="built_in">GetPtr</span>());</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">while</span> (!MasterState.<span class="built_in">InterlockedCompareExchange</span>(NewMasterState, LocalMasterState))</span><br><span class="line">		&#123;</span><br><span class="line">			LocalMasterState.<span class="built_in">AtomicRead</span>(MasterState);</span><br><span class="line">			NewMasterState.<span class="built_in">AdvanceCounterAndState</span>(LocalMasterState, <span class="number">1</span>);</span><br><span class="line">			ThreadToWake = <span class="built_in">FindThreadToWake</span>(LocalMasterState.<span class="built_in">GetPtr</span>());</span><br><span class="line"><span class="meta">#<span class="keyword">if</span> 0</span></span><br><span class="line">			<span class="comment">// This block of code is supposed to avoid starting the task thread if the queues are empty.</span></span><br><span class="line">			<span class="comment">// There WAS a silly bug here. In rare cases no task thread is woken up.</span></span><br><span class="line">			<span class="comment">// That bug has been fixed, but I don&#x27;t think we really need this code anyway.</span></span><br><span class="line">			<span class="comment">// Without this block, it is possible that we do a redundant wake-up, but for task threads, that can happen anyway. </span></span><br><span class="line">			<span class="comment">// For named threads, the rare redundant wakeup seems acceptable.</span></span><br><span class="line">			<span class="keyword">if</span> (ThreadToWake &gt;= <span class="number">0</span>)</span><br><span class="line">			&#123;</span><br><span class="line">				<span class="type">bool</span> bAny = <span class="literal">false</span>;</span><br><span class="line">				<span class="keyword">for</span> (int32 Index = <span class="number">0</span>; !bAny &amp;&amp; Index &lt; NumPriorities; Index++)</span><br><span class="line">				&#123;</span><br><span class="line">					bAny = !PriorityQueues[Index].<span class="built_in">IsEmpty</span>();</span><br><span class="line">				&#125;</span><br><span class="line">				<span class="keyword">if</span> (!bAny) <span class="comment">// if there is nothing in the queues, then don&#x27;t wake anyone</span></span><br><span class="line">				&#123;</span><br><span class="line">					ThreadToWake = <span class="number">-1</span>;</span><br><span class="line">				&#125;</span><br><span class="line">			&#125;</span><br><span class="line"><span class="meta">#<span class="keyword">endif</span></span></span><br><span class="line">			<span class="keyword">if</span> (ThreadToWake &gt;= <span class="number">0</span>)</span><br><span class="line">			&#123;</span><br><span class="line">				NewMasterState.<span class="built_in">SetPtr</span>(<span class="built_in">TurnOffBit</span>(LocalMasterState.<span class="built_in">GetPtr</span>(), ThreadToWake));</span><br><span class="line">			&#125;</span><br><span class="line">			<span class="keyword">else</span></span><br><span class="line">			&#123;</span><br><span class="line">				NewMasterState.<span class="built_in">SetPtr</span>(LocalMasterState.<span class="built_in">GetPtr</span>());</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">return</span> ThreadToWake;</span><br><span class="line">	&#125;</span><br></pre></td></tr></table></figure>
+<p>找到唤醒的线程Index后调用对应的Event，Trigger来唤醒线程，可以发现这里的Index还要经过Priority 和 Set的换算，下面会讲线程的排列。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">StartTaskThread</span><span class="params">(int32 Priority, int32 IndexToStart)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	ENamedThreads::Type ThreadToWake = ENamedThreads::<span class="built_in">Type</span>(IndexToStart + Priority * NumTaskThreadsPerSet + NumNamedThreads);</span><br><span class="line">	((FTaskThreadAnyThread&amp;)<span class="built_in">Thread</span>(ThreadToWake)).<span class="built_in">WakeUp</span>();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="FTaskGraphImplementation"><a href="#FTaskGraphImplementation" class="headerlink" title="FTaskGraphImplementation"></a>FTaskGraphImplementation</h3><p>这个类是TaskGraph框架实现的关键，它维护了多个线程成员，并且提供了队列服务来保证线程可以有效执行任务。会根据操作系统实际提供的线程数量。具体线程排列如下：</p>
+<p><img src="/2025/01/12/UEMultiThread/taskimpletion.drawio.png" alt="taskimpletion.drawio"></p>
+<p>在线程的生成过程中，会给每个线程申请单独的TLS，以及Affinity（核心亲和度），这样保证每个线程可以跑在不同的核心上。需要注意一点的是，这里16线程的电脑申请的是14个工作线程，由于FIndexPointer的位数限制，实际上每次任务入队时只能获取到26个不同线程，所以超过16核心32线程的电脑，也只能分配出26个线程来执行。而上面分配了不同优先级的Sets，以个人测试为例，实际上TaskGraph分配了47个线程，其中5个NameThread，这显然超过了电脑的线程并行数量，其实是因为这里申请的线程和实际上的操作系统多线程不完全是一个概念，在实际执行的时候，可能会有两个WorkerThread在同一个核心以时间片轮转的方式执行。</p>
+<p>由于相同优先级的线程会共享同一个任务队列，所以在执行的时候可以保证负载均衡，即每个线程都尽可能执行相似数量的任务。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">int32 <span class="title">FWindowsPlatformMisc::NumberOfWorkerThreadsToSpawn</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	<span class="type">static</span> int32 MaxServerWorkerThreads = <span class="number">4</span>;</span><br><span class="line">	<span class="type">static</span> int32 MaxWorkerThreads = <span class="number">26</span>;</span><br><span class="line"></span><br><span class="line">	int32 NumberOfCores = FWindowsPlatformMisc::<span class="built_in">NumberOfCores</span>();</span><br><span class="line">	int32 NumberOfCoresIncludingHyperthreads = FWindowsPlatformMisc::<span class="built_in">NumberOfCoresIncludingHyperthreads</span>();</span><br><span class="line">	int32 NumberOfThreads = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> (NumberOfCoresIncludingHyperthreads &gt; NumberOfCores)</span><br><span class="line">	&#123;</span><br><span class="line">		NumberOfThreads = NumberOfCoresIncludingHyperthreads - <span class="number">2</span>;</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">else</span></span><br><span class="line">	&#123;</span><br><span class="line">		NumberOfThreads = NumberOfCores - <span class="number">1</span>;</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="comment">//这里限制了最多26</span></span><br><span class="line">	int32 MaxWorkerThreadsWanted = <span class="built_in">IsRunningDedicatedServer</span>() ? MaxServerWorkerThreads : MaxWorkerThreads;</span><br><span class="line">	<span class="comment">// need to spawn at least one worker thread (see FTaskGraphImplementation)</span></span><br><span class="line">	<span class="keyword">return</span> FMath::<span class="built_in">Max</span>(FMath::<span class="built_in">Min</span>(NumberOfThreads, MaxWorkerThreadsWanted), <span class="number">2</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2024/12/06/ParticleSystem/" rel="prev" title="ParticleSystem">
+      <i class="fa fa-chevron-left"></i> ParticleSystem
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2025/01/23/UEAnimation/" rel="next" title="UE Animation">
+      UE Animation <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#UEMultiThread"><span class="nav-number">1.</span> <span class="nav-text">UEMultiThread</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#TQueue"><span class="nav-number">1.1.</span> <span class="nav-text">TQueue</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#TaskGraph"><span class="nav-number">1.2.</span> <span class="nav-text">TaskGraph</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E6%AC%A1%E5%AE%8C%E6%95%B4%E4%BB%BB%E5%8A%A1%E7%9A%84%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B"><span class="nav-number">1.3.</span> <span class="nav-text">一次完整任务的执行流程</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#TGraphTask"><span class="nav-number">1.3.1.</span> <span class="nav-text">TGraphTask</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%86%E9%85%8D%E4%BB%BB%E5%8A%A1-amp-%E5%94%A4%E9%86%92%E8%BF%9B%E7%A8%8B"><span class="nav-number">1.3.2.</span> <span class="nav-text">分配任务&amp;唤醒进程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#FTaskGraphImplementation"><span class="nav-number">1.3.3.</span> <span class="nav-text">FTaskGraphImplementation</span></a></li></ol></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Ritchie"
+      src="/images/avatar.jpg">
+  <p class="site-author-name" itemprop="name">Ritchie</p>
+  <div class="site-description" itemprop="description">Engine/Graphics 爱好者 做人没有梦想,那和咸鱼有什么区别</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">14</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">2</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2025</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Ritchie</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-area"></i>
+    </span>
+      <span class="post-meta-item-text">站点总字数：</span>
+    <span title="站点总字数">27k</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+      <span class="post-meta-item-text">站点阅读时长 &asymp;</span>
+    <span title="站点阅读时长">1:40</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js"></script>
+  <script src="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+
+<script>
+  if (typeof MathJax === 'undefined') {
+    window.MathJax = {
+      loader: {
+        source: {
+          '[tex]/amsCd': '[tex]/amscd',
+          '[tex]/AMScd': '[tex]/amscd'
+        }
+      },
+      tex: {
+        inlineMath: {'[+]': [['$', '$']]},
+        tags: 'ams'
+      },
+      options: {
+        renderActions: {
+          findScript: [10, doc => {
+            document.querySelectorAll('script[type^="math/tex"]').forEach(node => {
+              const display = !!node.type.match(/; *mode=display/);
+              const math = new doc.options.MathItem(node.textContent, doc.inputJax[0], display);
+              const text = document.createTextNode('');
+              node.parentNode.replaceChild(text, node);
+              math.start = {node: text, delim: '', n: 0};
+              math.end = {node: text, delim: '', n: 0};
+              doc.math.push(math);
+            });
+          }, '', false],
+          insertedScript: [200, () => {
+            document.querySelectorAll('mjx-container').forEach(node => {
+              let target = node.parentNode;
+              if (target.nodeName.toLowerCase() === 'li') {
+                target.parentNode.classList.add('has-jax');
+              }
+            });
+          }, '', false]
+        }
+      }
+    };
+    (function () {
+      var script = document.createElement('script');
+      script.src = '//cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js';
+      script.defer = true;
+      document.head.appendChild(script);
+    })();
+  } else {
+    MathJax.startup.document.state(0);
+    MathJax.texReset();
+    MathJax.typeset();
+  }
+</script>
+
+    
+
+  
+
+</body>
+</html>

@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 7.1.1">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"ritchielambda.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":true,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="UEParticleSystemUE4的粒子系统核心成员就是ParticleSystemComponent。特效同学在编辑器下编辑粒子特效生成模板数据，程序在运行时根据模板生成对应的Component，然后在Tick中更新粒子效果直至生命周期结束。本篇暂不涉及编辑器下粒子的数据编辑与生成，只讨论运行时的粒子更新流程。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="ParticleSystem">
+<meta property="og:url" content="https://ritchielambda.github.io/2024/12/06/ParticleSystem/index.html">
+<meta property="og:site_name" content="Ritchie&#39;s Blog">
+<meta property="og:description" content="UEParticleSystemUE4的粒子系统核心成员就是ParticleSystemComponent。特效同学在编辑器下编辑粒子特效生成模板数据，程序在运行时根据模板生成对应的Component，然后在Tick中更新粒子效果直至生命周期结束。本篇暂不涉及编辑器下粒子的数据编辑与生成，只讨论运行时的粒子更新流程。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://ritchielambda.github.io/2024/12/06/ParticleSystem/ParticleComponent.png">
+<meta property="og:image" content="https://ritchielambda.github.io/2024/12/06/ParticleSystem/particlecall.jpg">
+<meta property="og:image" content="https://ritchielambda.github.io/2024/12/06/ParticleSystem/EmitterInstanceType.png">
+<meta property="og:image" content="https://ritchielambda.github.io/2024/12/06/ParticleSystem/NiagaraComponent.drawio.png">
+<meta property="og:image" content="https://ritchielambda.github.io/2024/12/06/ParticleSystem/NiagaraUpdate.drawio.png">
+<meta property="og:image" content="https://ritchielambda.github.io/2024/12/06/ParticleSystem/TickStage.png">
+<meta property="og:image" content="https://ritchielambda.github.io/2024/12/06/ParticleSystem/NiagraRender.drawio.png">
+<meta property="og:image" content="https://ritchielambda.github.io/2024/12/06/ParticleSystem/NiagaraMeshBatch.drawio.png">
+<meta property="article:published_time" content="2024-12-06T21:49:00.000Z">
+<meta property="article:modified_time" content="2025-06-30T15:40:06.384Z">
+<meta property="article:author" content="Ritchie">
+<meta property="article:tag" content="图形学">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://ritchielambda.github.io/2024/12/06/ParticleSystem/ParticleComponent.png">
+
+<link rel="canonical" href="https://ritchielambda.github.io/2024/12/06/ParticleSystem/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>ParticleSystem | Ritchie's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+<link rel="alternate" href="/atom.xml" title="Ritchie's Blog" type="application/atom+xml">
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Ritchie's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://ritchielambda.github.io/2024/12/06/ParticleSystem/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpg">
+      <meta itemprop="name" content="Ritchie">
+      <meta itemprop="description" content="Engine/Graphics 爱好者 做人没有梦想,那和咸鱼有什么区别">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Ritchie's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          ParticleSystem
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2024-12-06 21:49:00" itemprop="dateCreated datePublished" datetime="2024-12-06T21:49:00+00:00">2024-12-06</time>
+            </span>
+
+          
+            <span class="post-meta-item" title="本文字数">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+              <span>1.1k</span>
+            </span>
+            <span class="post-meta-item" title="阅读时长">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+              <span>4 分钟</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="UEParticleSystem"><a href="#UEParticleSystem" class="headerlink" title="UEParticleSystem"></a>UEParticleSystem</h1><p>UE4的粒子系统核心成员就是ParticleSystemComponent。特效同学在编辑器下编辑粒子特效生成模板数据，程序在运行时根据模板生成对应的Component，然后在Tick中更新粒子效果直至生命周期结束。本篇暂不涉及编辑器下粒子的数据编辑与生成，只讨论运行时的粒子更新流程。</p>
+<span id="more"></span>
+<h2 id="ParticleSystemComponent"><a href="#ParticleSystemComponent" class="headerlink" title="ParticleSystemComponent"></a>ParticleSystemComponent</h2><p><img src="/2024/12/06/ParticleSystem/ParticleComponent.png" alt="ParticleComponent"></p>
+<p>可以看到Particle主要分成三个部分，UParticleSystem，FParticleEmitterInstance，SceneProxy，这三个分别是粒子模板数据，运行时的粒子实例数据，以及渲染线程与Component一一对应的渲染数据。</p>
+<p>一个完整的粒子特效通常需要多个发射器来组成，比如火焰特效需要火苗以及烟雾发射器。而每个发射区又区分多个Module，负责粒子的各种表现，如SpawnModule负责生成，LocationModule负责位置数据更新，需要注意的是，在Emitter和Module之间，还存在一个LODLevel管理，以便粒子特效的性能优化。</p>
+<h2 id="一个粒子的更新流程"><a href="#一个粒子的更新流程" class="headerlink" title="一个粒子的更新流程"></a>一个粒子的更新流程</h2><p>CPU端主要的计算是在ParticleSystemComponent的ComputeTickComponent_Concurrent中调用的，整个更新的调用链如下：</p>
+<p>可以看到这里跟编辑器中重合的部分就是各个Module的Update，在上面的结构图里讨论过，Instance和Module之间存在一个LODLevel，这里同样在UpdateModule中是根据LODLevel中的Module来实时更新的。</p>
+<p>GPU端的更新分为两步：一是每帧结束时填充Proxy数据，二是渲染流程中获取Mesh数据。</p>
+<p><img src="/2024/12/06/ParticleSystem/particlecall.jpg" alt="particlecall"></p>
+<p>需要注意TypeDataModule，这个Module比较特殊，它决定了粒子Emitter的类型，这里有几种不同类型的粒子发射器以满足不同需求，与发射器类型对应的就是渲染数据的不同，FDynamicEmitterDataBase，在获取渲染数据时也会根据类型不同调用不同子类接口。</p>
+<p><img src="/2024/12/06/ParticleSystem/EmitterInstanceType.png" alt="image-20241213181447276"></p>
+<h1 id="NiagaraSystem"><a href="#NiagaraSystem" class="headerlink" title="NiagaraSystem"></a>NiagaraSystem</h1><p>这个系统可以说是UE4 ParticleSystem的升级版，可以更加自由地组合粒子发射器，对粒子系统编程。与之前Cascade系统的差别主要如下：</p>
+<ul>
+<li>Emitter独立于Component之外，可以自由组合。</li>
+<li>丢弃LODLevel层。</li>
+<li>每个Emitter可以根据阶段添加Module，进行调参。</li>
+</ul>
+<h2 id="NiagaraComponent"><a href="#NiagaraComponent" class="headerlink" title="NiagaraComponent"></a>NiagaraComponent</h2><p><img src="/2024/12/06/ParticleSystem/NiagaraComponent.drawio.png" alt="NiagaraComponent.drawio"></p>
+<p>储存粒子数据的结构是FNiagaraDataSet，两个DataBuffer成员分别是当前帧的输入和输出数据。</p>
+<p>在SceneProxy端根据Emitter类型的不同，放入不同的Render中存储渲染，存储的粒子数据位于FNiagaraDynamicDataBase，里面存储了CPU和GPU端的粒子渲染数据。</p>
+<h2 id="粒子的更新流程"><a href="#粒子的更新流程" class="headerlink" title="粒子的更新流程"></a>粒子的更新流程</h2><p><img src="/2024/12/06/ParticleSystem/NiagaraUpdate.drawio.png" alt="NiagaraUpdate.drawio"></p>
+<p>粒子的更新还是在Tick中完成的，与Cascade系统不同的是，这里不会再显式地调用每个Module的更新。</p>
+<p>更新阶段区分CPU还是GPU粒子，CPU端的粒子最终是通过虚拟机执行脚本来更新，可以看到先执行SpawnContext然后执行UpdateContext，而GPU端粒子则只负责把数据放入FNiagaraSystemGpuComputeProxy的PendingTicks队列，之后会在渲染线程获取队列数据，然后把队列数据转为Dispatch数据，最终把数据传入ComputeShader进行更新。更新的数据buff始终是EmitterInstance中的DataBuffer。</p>
+<p>GPU端粒子更新区分为三个阶段，如何决定是哪个阶段是在FNiagaraSystemGpuComputeProxy中，最简单的如果需要深度或者距离场信息，那么就需要放到不透明后再更新，默认是在PreInitView阶段。</p>
+<p><img src="/2024/12/06/ParticleSystem/TickStage.png" alt="image-20241220175929596"></p>
+<h2 id="粒子的渲染"><a href="#粒子的渲染" class="headerlink" title="粒子的渲染"></a>粒子的渲染</h2><p>由于渲染流程基本没什么变化，所以还是走Component数据转移到SceneProxy，然后数据生成MeshBatch，最后生成MeshDrawCommands这一套。</p>
+<p><img src="/2024/12/06/ParticleSystem/NiagraRender.drawio.png" alt="NiagraRender.drawio"></p>
+<p>首先先把之前更新的数据转移到Render线程下管理，然后再借助这些数据生成MeshBatch。</p>
+<p><img src="/2024/12/06/ParticleSystem/NiagaraMeshBatch.drawio.png" alt="NiagaraMeshBatch.drawio"></p>
+<p>生成MeshBatch的流程入口还是在GetDynamicMeshElements，一步步调用到Renderer的接口，根据粒子类型不同调用不同renderer，需要注意的是这里传输粒子顶点数据有两个重要的Buffer，FNiagaraSpriteUniformParameters和FNiagaraSpriteVFLooseParameters。</p>
+<p>FNiagaraSpriteUniformParameters是与View相关的Buffer，包含粒子渲染的一些基础参数，比如默认位置，颜色，以及实例数据的布局等</p>
+<p>FNiagaraSpriteVFLooseParameters是与实例相关的Buffer，存储了之前更新粒子的每个实例数据。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E5%9B%BE%E5%BD%A2%E5%AD%A6/" rel="tag"># 图形学</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2024/11/07/UE%E9%98%B4%E5%BD%B1/" rel="prev" title="UE阴影">
+      <i class="fa fa-chevron-left"></i> UE阴影
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2025/01/12/UEMultiThread/" rel="next" title="UEMultiThread">
+      UEMultiThread <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#UEParticleSystem"><span class="nav-number">1.</span> <span class="nav-text">UEParticleSystem</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#ParticleSystemComponent"><span class="nav-number">1.1.</span> <span class="nav-text">ParticleSystemComponent</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E4%B8%AA%E7%B2%92%E5%AD%90%E7%9A%84%E6%9B%B4%E6%96%B0%E6%B5%81%E7%A8%8B"><span class="nav-number">1.2.</span> <span class="nav-text">一个粒子的更新流程</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#NiagaraSystem"><span class="nav-number">2.</span> <span class="nav-text">NiagaraSystem</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#NiagaraComponent"><span class="nav-number">2.1.</span> <span class="nav-text">NiagaraComponent</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%B2%92%E5%AD%90%E7%9A%84%E6%9B%B4%E6%96%B0%E6%B5%81%E7%A8%8B"><span class="nav-number">2.2.</span> <span class="nav-text">粒子的更新流程</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%B2%92%E5%AD%90%E7%9A%84%E6%B8%B2%E6%9F%93"><span class="nav-number">2.3.</span> <span class="nav-text">粒子的渲染</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Ritchie"
+      src="/images/avatar.jpg">
+  <p class="site-author-name" itemprop="name">Ritchie</p>
+  <div class="site-description" itemprop="description">Engine/Graphics 爱好者 做人没有梦想,那和咸鱼有什么区别</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">14</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">2</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2025</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Ritchie</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-area"></i>
+    </span>
+      <span class="post-meta-item-text">站点总字数：</span>
+    <span title="站点总字数">27k</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+      <span class="post-meta-item-text">站点阅读时长 &asymp;</span>
+    <span title="站点阅读时长">1:40</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js"></script>
+  <script src="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+
+<script>
+  if (typeof MathJax === 'undefined') {
+    window.MathJax = {
+      loader: {
+        source: {
+          '[tex]/amsCd': '[tex]/amscd',
+          '[tex]/AMScd': '[tex]/amscd'
+        }
+      },
+      tex: {
+        inlineMath: {'[+]': [['$', '$']]},
+        tags: 'ams'
+      },
+      options: {
+        renderActions: {
+          findScript: [10, doc => {
+            document.querySelectorAll('script[type^="math/tex"]').forEach(node => {
+              const display = !!node.type.match(/; *mode=display/);
+              const math = new doc.options.MathItem(node.textContent, doc.inputJax[0], display);
+              const text = document.createTextNode('');
+              node.parentNode.replaceChild(text, node);
+              math.start = {node: text, delim: '', n: 0};
+              math.end = {node: text, delim: '', n: 0};
+              doc.math.push(math);
+            });
+          }, '', false],
+          insertedScript: [200, () => {
+            document.querySelectorAll('mjx-container').forEach(node => {
+              let target = node.parentNode;
+              if (target.nodeName.toLowerCase() === 'li') {
+                target.parentNode.classList.add('has-jax');
+              }
+            });
+          }, '', false]
+        }
+      }
+    };
+    (function () {
+      var script = document.createElement('script');
+      script.src = '//cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js';
+      script.defer = true;
+      document.head.appendChild(script);
+    })();
+  } else {
+    MathJax.startup.document.state(0);
+    MathJax.texReset();
+    MathJax.typeset();
+  }
+</script>
+
+    
+
+  
+
+</body>
+</html>

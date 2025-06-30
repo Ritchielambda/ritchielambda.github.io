@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 7.1.1">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"ritchielambda.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":true,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="UE VertexFactory​    个人理解：UE 的VertexFactory是一个用来做数据兼容的结构体，在FBX数据与UE的StaticMesh之间做兼容，在CPU的StaticMesh与GPU的VertexShader之间做兼容。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="UE VertexFactory">
+<meta property="og:url" content="https://ritchielambda.github.io/2023/11/05/VertexFactory/index.html">
+<meta property="og:site_name" content="Ritchie&#39;s Blog">
+<meta property="og:description" content="UE VertexFactory​    个人理解：UE 的VertexFactory是一个用来做数据兼容的结构体，在FBX数据与UE的StaticMesh之间做兼容，在CPU的StaticMesh与GPU的VertexShader之间做兼容。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://ritchielambda.github.io/2023/11/05/VertexFactory/VF_modify.jpg">
+<meta property="og:image" content="https://ritchielambda.github.io/2023/11/05/VertexFactory/Shader_modify.jpg">
+<meta property="article:published_time" content="2023-11-05T09:09:53.000Z">
+<meta property="article:modified_time" content="2025-06-30T15:40:06.402Z">
+<meta property="article:author" content="Ritchie">
+<meta property="article:tag" content="UE源码">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://ritchielambda.github.io/2023/11/05/VertexFactory/VF_modify.jpg">
+
+<link rel="canonical" href="https://ritchielambda.github.io/2023/11/05/VertexFactory/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>UE VertexFactory | Ritchie's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+<link rel="alternate" href="/atom.xml" title="Ritchie's Blog" type="application/atom+xml">
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Ritchie's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://ritchielambda.github.io/2023/11/05/VertexFactory/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpg">
+      <meta itemprop="name" content="Ritchie">
+      <meta itemprop="description" content="Engine/Graphics 爱好者 做人没有梦想,那和咸鱼有什么区别">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Ritchie's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          UE VertexFactory
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2023-11-05 09:09:53" itemprop="dateCreated datePublished" datetime="2023-11-05T09:09:53+00:00">2023-11-05</time>
+            </span>
+
+          
+            <span class="post-meta-item" title="本文字数">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+              <span>1.6k</span>
+            </span>
+            <span class="post-meta-item" title="阅读时长">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+              <span>6 分钟</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="UE-VertexFactory"><a href="#UE-VertexFactory" class="headerlink" title="UE VertexFactory"></a>UE VertexFactory</h1><p>​    个人理解：UE 的VertexFactory是一个用来做数据兼容的结构体，在FBX数据与UE的StaticMesh之间做兼容，在CPU的StaticMesh与GPU的VertexShader之间做兼容。</p>
+<span id="more"></span>
+<h2 id="1-在FBX与StaticMesh之间兼容"><a href="#1-在FBX与StaticMesh之间兼容" class="headerlink" title="1.在FBX与StaticMesh之间兼容"></a>1.在FBX与StaticMesh之间兼容</h2><p>在StaticMesh的导入流程中，Mesh的网格数据都被存储在了FStaticMeshRenderData结构体中，并且会依次执行两个成员的InitResources。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * FStaticMeshRenderData - All data needed to render a static mesh.</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">FStaticMeshRenderData</span></span><br><span class="line">&#123;</span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line"></span><br><span class="line">	<span class="comment">/** Default constructor. */</span></span><br><span class="line">	<span class="function">ENGINE_API <span class="title">FStaticMeshRenderData</span><span class="params">()</span></span>;</span><br><span class="line">	ENGINE_API ~<span class="built_in">FStaticMeshRenderData</span>();</span><br><span class="line"></span><br><span class="line">	<span class="comment">/**</span></span><br><span class="line"><span class="comment">	 * Per-LOD resources. For compatibility reasons, the FStaticMeshLODResources array are not referenced through TRefCountPtr.</span></span><br><span class="line"><span class="comment">	 * The LODResource still has a ref count of at least 1, see FStaticMeshLODResources() constructor.</span></span><br><span class="line"><span class="comment">	 */</span></span><br><span class="line">	FStaticMeshLODResourcesArray LODResources;</span><br><span class="line">	FStaticMeshVertexFactoriesArray LODVertexFactories;</span><br><span class="line">    <span class="comment">//...</span></span><br><span class="line">&#125;</span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">UStaticMesh::InitResources</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line"><span class="comment">//...</span></span><br><span class="line">    <span class="keyword">if</span> (RenderData)</span><br><span class="line">    &#123;</span><br><span class="line">        UWorld* World = <span class="built_in">GetWorld</span>();</span><br><span class="line">        RenderData-&gt;<span class="built_in">InitResources</span>(World ? World-&gt;FeatureLevel.<span class="built_in">GetValue</span>() :                          ERHIFeatureLevel::Num, <span class="keyword">this</span>);</span><br><span class="line">    &#125;</span><br><span class="line"><span class="comment">//...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>其中FStaticMeshLODResources::InitResources 为每一种顶点属性都申请了对应的GPU资源，如(Position)VertexBuffer，(Tangent)VertexBuffer，并且将代理保存在Cpu端的数据结构中。</p>
+<p>FStaticMeshVertexFactories::InitResources则是将上面申请得到的代理，与VertexFactory中对应的数据结构绑定，填充其数据结构，主要用VerterxFactory存放两类数据：顶点buffer和顶点声明。</p>
+<p>主要接口是FLocalVertexFactory::InitRHI()</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">FLocalVertexFactory::InitRHI</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">   <span class="built_in">SCOPED_LOADTIMER</span>(FLocalVertexFactory_InitRHI);</span><br><span class="line"></span><br><span class="line">   <span class="comment">// We create different streams based on feature level</span></span><br><span class="line">   <span class="built_in">check</span>(<span class="built_in">HasValidFeatureLevel</span>());</span><br><span class="line"></span><br><span class="line">   <span class="comment">// VertexFactory needs to be able to support max possible shader platform and feature level</span></span><br><span class="line">   <span class="comment">// in case if we switch feature level at runtime.</span></span><br><span class="line">   <span class="type">const</span> <span class="type">bool</span> bCanUseGPUScene = <span class="built_in">UseGPUScene</span>(GMaxRHIShaderPlatform, GMaxRHIFeatureLevel);</span><br><span class="line"></span><br><span class="line">   <span class="comment">// If the vertex buffer containing position is not the same vertex buffer containing the rest of the data,</span></span><br><span class="line">   <span class="comment">// then initialize PositionStream and PositionDeclaration.</span></span><br><span class="line">   <span class="keyword">if</span> (Data.PositionComponent.VertexBuffer != Data.TangentBasisComponents[<span class="number">0</span>].VertexBuffer)</span><br><span class="line">   &#123;</span><br><span class="line">      <span class="keyword">auto</span> AddDeclaration = [<span class="keyword">this</span>, bCanUseGPUScene](EVertexInputStreamType InputStreamType, <span class="type">bool</span> bAddNormal)</span><br><span class="line">      &#123;</span><br><span class="line">         FVertexDeclarationElementList StreamElements;</span><br><span class="line">         <span class="comment">//这里把Data的数据转换成FVertexElement的形式，保存起来，其中保存了顶点的bindingindex,attributeindex，stride，offset这些数据</span></span><br><span class="line">         <span class="comment">//BindingIndex是C++侧的顶点数据的下标，attributeIndex是Shader侧的顶点属性的索引</span></span><br><span class="line">         <span class="comment">//用意就是告诉Shader 第几个数据流是什么属性</span></span><br><span class="line">         StreamElements.<span class="built_in">Add</span>(<span class="built_in">AccessStreamComponent</span>(Data.PositionComponent, <span class="number">0</span>, InputStreamType));</span><br><span class="line"></span><br><span class="line">         bAddNormal = bAddNormal &amp;&amp; Data.TangentBasisComponents[<span class="number">1</span>].VertexBuffer != <span class="literal">NULL</span>;</span><br><span class="line">         <span class="keyword">if</span> (bAddNormal)</span><br><span class="line">         &#123;</span><br><span class="line">            StreamElements.<span class="built_in">Add</span>(<span class="built_in">AccessStreamComponent</span>(Data.TangentBasisComponents[<span class="number">1</span>], <span class="number">2</span>, InputStreamType));</span><br><span class="line">         &#125;</span><br><span class="line"></span><br><span class="line">         <span class="type">const</span> uint8 TypeIndex = <span class="built_in">static_cast</span>&lt;uint8&gt;(InputStreamType);</span><br><span class="line">         PrimitiveIdStreamIndex[TypeIndex] = <span class="number">-1</span>;</span><br><span class="line">         <span class="keyword">if</span> (<span class="built_in">GetType</span>()-&gt;<span class="built_in">SupportsPrimitiveIdStream</span>() &amp;&amp; bCanUseGPUScene)</span><br><span class="line">         &#123;</span><br><span class="line">            <span class="comment">// When the VF is used for rendering in normal mesh passes, this vertex buffer and offset will be overridden</span></span><br><span class="line">            StreamElements.<span class="built_in">Add</span>(<span class="built_in">AccessStreamComponent</span>(<span class="built_in">FVertexStreamComponent</span>(&amp;GPrimitiveIdDummy, <span class="number">0</span>, <span class="number">0</span>, <span class="built_in">sizeof</span>(uint32), VET_UInt, EVertexStreamUsage::Instancing), <span class="number">1</span>, InputStreamType));</span><br><span class="line">            PrimitiveIdStreamIndex[TypeIndex] = StreamElements.<span class="built_in">Last</span>().StreamIndex;</span><br><span class="line">         &#125;</span><br><span class="line"></span><br><span class="line">         <span class="built_in">InitDeclaration</span>(StreamElements, InputStreamType);</span><br><span class="line">      &#125;;</span><br><span class="line"></span><br><span class="line">      <span class="built_in">AddDeclaration</span>(EVertexInputStreamType::PositionOnly, <span class="literal">false</span>);</span><br><span class="line">      <span class="built_in">AddDeclaration</span>(EVertexInputStreamType::PositionAndNormalOnly, <span class="literal">true</span>);</span><br><span class="line">   &#125;</span><br><span class="line"></span><br><span class="line">   FVertexDeclarationElementList Elements;</span><br><span class="line">   <span class="keyword">if</span>(Data.PositionComponent.VertexBuffer != <span class="literal">NULL</span>)</span><br><span class="line">   &#123;</span><br><span class="line">      Elements.<span class="built_in">Add</span>(<span class="built_in">AccessStreamComponent</span>(Data.PositionComponent,<span class="number">0</span>));</span><br><span class="line">   &#125;</span><br><span class="line"></span><br><span class="line">   &#123;</span><br><span class="line">      <span class="type">const</span> uint8 Index = <span class="built_in">static_cast</span>&lt;uint8&gt;(EVertexInputStreamType::Default);</span><br><span class="line">      PrimitiveIdStreamIndex[Index] = <span class="number">-1</span>;</span><br><span class="line">      <span class="keyword">if</span> (<span class="built_in">GetType</span>()-&gt;<span class="built_in">SupportsPrimitiveIdStream</span>() &amp;&amp; bCanUseGPUScene)</span><br><span class="line">      &#123;</span><br><span class="line">         <span class="comment">// When the VF is used for rendering in normal mesh passes, this vertex buffer and offset will be overridden</span></span><br><span class="line">         Elements.<span class="built_in">Add</span>(<span class="built_in">AccessStreamComponent</span>(<span class="built_in">FVertexStreamComponent</span>(&amp;GPrimitiveIdDummy, <span class="number">0</span>, <span class="number">0</span>, <span class="built_in">sizeof</span>(uint32), VET_UInt, EVertexStreamUsage::Instancing), <span class="number">13</span>));</span><br><span class="line">         PrimitiveIdStreamIndex[Index] = Elements.<span class="built_in">Last</span>().StreamIndex;</span><br><span class="line">      &#125;</span><br><span class="line">   &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">//...... </span></span><br><span class="line"></span><br><span class="line">   <span class="built_in">check</span>(Streams.<span class="built_in">Num</span>() &gt; <span class="number">0</span>);</span><br><span class="line"></span><br><span class="line">   <span class="built_in">InitDeclaration</span>(Elements);</span><br><span class="line">   <span class="built_in">check</span>(<span class="built_in">IsValidRef</span>(<span class="built_in">GetDeclaration</span>()));</span><br><span class="line"></span><br><span class="line">   <span class="type">const</span> int32 DefaultBaseVertexIndex = <span class="number">0</span>;</span><br><span class="line">   <span class="type">const</span> int32 DefaultPreSkinBaseVertexIndex = <span class="number">0</span>;</span><br><span class="line">   <span class="keyword">if</span> (<span class="built_in">RHISupportsManualVertexFetch</span>(GMaxRHIShaderPlatform) || bCanUseGPUScene)</span><br><span class="line">   &#123;</span><br><span class="line">      <span class="built_in">SCOPED_LOADTIMER</span>(FLocalVertexFactory_InitRHI_CreateLocalVFUniformBuffer);</span><br><span class="line">      UniformBuffer = <span class="built_in">CreateLocalVFUniformBuffer</span>(<span class="keyword">this</span>, Data.LODLightmapDataIndex, <span class="literal">nullptr</span>, DefaultBaseVertexIndex, DefaultPreSkinBaseVertexIndex);</span><br><span class="line">   &#125;</span><br><span class="line"></span><br><span class="line">   <span class="built_in">check</span>(<span class="built_in">IsValidRef</span>(<span class="built_in">GetDeclaration</span>()));</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>InitRHI主要是用来做顶点声明RHI申请的，顶点缓冲的RHI资源已经在FStaticMeshVertexFactories::InitVertexFactory接口中从StaticMesh中的LOD数据绑定到的VF对应的Component的Buffer下，在InitRHI中调用了InitDeclaration：最终申请了一个Vertex的RHI资源</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">FVertexFactory::InitDeclaration</span><span class="params">(<span class="type">const</span> FVertexDeclarationElementList&amp; Elements, EVertexInputStreamType StreamType)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">        </span><br><span class="line">        <span class="keyword">if</span> (StreamType == EVertexInputStreamType::PositionOnly)</span><br><span class="line">        &#123;</span><br><span class="line">                PositionDeclaration = PipelineStateCache::<span class="built_in">GetOrCreateVertexDeclaration</span>(Elements);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">else</span> <span class="keyword">if</span> (StreamType == EVertexInputStreamType::PositionAndNormalOnly)</span><br><span class="line">        &#123;</span><br><span class="line">                PositionAndNormalDeclaration = PipelineStateCache::<span class="built_in">GetOrCreateVertexDeclaration</span>(Elements);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">else</span> <span class="comment">// (StreamType == EVertexInputStreamType::Default)</span></span><br><span class="line">        &#123;</span><br><span class="line">                <span class="comment">// Create the vertex declaration for rendering the factory normally.</span></span><br><span class="line">                Declaration = PipelineStateCache::<span class="built_in">GetOrCreateVertexDeclaration</span>(Elements);</span><br><span class="line">        &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function">FRHIVertexDeclaration*        <span class="title">PipelineStateCache::GetOrCreateVertexDeclaration</span><span class="params">(<span class="type">const</span> FVertexDeclarationElementList&amp; Elements)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">        <span class="comment">// Actual locking/contention time should be close to unmeasurable</span></span><br><span class="line">        <span class="function">FScopeLock <span class="title">ScopeLock</span><span class="params">(&amp;GVertexDeclarationLock)</span></span>;</span><br><span class="line">        uint32 Key = FCrc::<span class="built_in">MemCrc_DEPRECATED</span>(Elements.<span class="built_in">GetData</span>(), Elements.<span class="built_in">Num</span>() * <span class="built_in">sizeof</span>(FVertexElement));</span><br><span class="line">        FRHIVertexDeclaration** Found = GVertexDeclarationCache.<span class="built_in">Find</span>(Key);</span><br><span class="line">        <span class="keyword">if</span> (Found)</span><br><span class="line">        &#123;</span><br><span class="line">                <span class="keyword">return</span> *Found;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        FVertexDeclarationRHIRef NewDeclaration = <span class="built_in">RHICreateVertexDeclaration</span>(Elements);</span><br><span class="line"></span><br><span class="line">        </span><br><span class="line">        <span class="comment">// Add an extra reference so we don&#x27;t have TRefCountPtr in the maps</span></span><br><span class="line">        NewDeclaration-&gt;<span class="built_in">AddRef</span>();</span><br><span class="line">        GVertexDeclarationCache.<span class="built_in">Add</span>(Key, NewDeclaration);</span><br><span class="line">        <span class="keyword">return</span> NewDeclaration;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="2-在StaticMesh和shader中兼容"><a href="#2-在StaticMesh和shader中兼容" class="headerlink" title="2.在StaticMesh和shader中兼容"></a>2.在StaticMesh和shader中兼容</h2><p>到这里VF的数据就被填充好了，什么时候会在渲染时被用到呢，首先捋一下VF被引用的链路：VF是被Mesh-&gt;RenderData-&gt;LODVertexFactories 引用的，所以在生成meshbatch的时候会把VF一起传参，那么看下MeshBatch的生成函数：FStaticMeshSceneProxy::GetMeshElement</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">bool</span> <span class="title">FStaticMeshSceneProxy::GetMeshElement</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function">        int32 LODIndex, </span></span></span><br><span class="line"><span class="params"><span class="function">        int32 BatchIndex, </span></span></span><br><span class="line"><span class="params"><span class="function">        int32 SectionIndex, </span></span></span><br><span class="line"><span class="params"><span class="function">        uint8 InDepthPriorityGroup, </span></span></span><br><span class="line"><span class="params"><span class="function">        <span class="type">bool</span> bUseSelectionOutline,</span></span></span><br><span class="line"><span class="params"><span class="function">        <span class="type">bool</span> bAllowPreCulledIndices, </span></span></span><br><span class="line"><span class="params"><span class="function">        FMeshBatch&amp; OutMeshBatch)</span> <span class="type">const</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">       <span class="comment">//.....</span></span><br><span class="line">        <span class="type">const</span> FVertexFactory* VertexFactory = <span class="literal">nullptr</span>;</span><br><span class="line"></span><br><span class="line">        <span class="comment">//...</span></span><br><span class="line">        <span class="comment">// Has the mesh component overridden the vertex color stream for this mesh LOD?</span></span><br><span class="line">        <span class="keyword">if</span> (ProxyLODInfo.OverrideColorVertexBuffer)</span><br><span class="line">        &#123;</span><br><span class="line">                <span class="comment">// Make sure the indices are accessing data within the vertex buffer&#x27;s</span></span><br><span class="line">                <span class="built_in">check</span>(Section.MaxVertexIndex &lt; ProxyLODInfo.OverrideColorVertexBuffer-&gt;<span class="built_in">GetNumVertices</span>())</span><br><span class="line"></span><br><span class="line">                <span class="comment">// Use the instanced colors vertex factory.</span></span><br><span class="line">                VertexFactory = &amp;VFs.VertexFactoryOverrideColorVertexBuffer;</span><br><span class="line"></span><br><span class="line">                OutMeshBatchElement.VertexFactoryUserData = ProxyLODInfo.OverrideColorVFUniformBuffer.<span class="built_in">GetReference</span>();</span><br><span class="line">                OutMeshBatchElement.UserData = ProxyLODInfo.OverrideColorVertexBuffer;</span><br><span class="line">                OutMeshBatchElement.bUserDataIsColorVertexBuffer = <span class="literal">true</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">else</span></span><br><span class="line">        &#123;</span><br><span class="line">                VertexFactory = &amp;VFs.VertexFactory;</span><br><span class="line"></span><br><span class="line">                OutMeshBatchElement.VertexFactoryUserData = VFs.VertexFactory.<span class="built_in">GetUniformBuffer</span>();</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="type">const</span> <span class="type">bool</span> bWireframe = <span class="literal">false</span>;</span><br><span class="line">        </span><br><span class="line">        <span class="comment">// Disable adjacency information when the selection outline is enabled, since tessellation won&#x27;t be used.</span></span><br><span class="line">        <span class="type">const</span> <span class="type">bool</span> bRequiresAdjacencyInformation = !bUseSelectionOutline &amp;&amp; <span class="built_in">RequiresAdjacencyInformation</span>(MaterialInterface, VertexFactory-&gt;<span class="built_in">GetType</span>(), FeatureLevel);</span><br><span class="line">        <span class="comment">//最终在SetMeshElementGeometrySource 把VF赋值给了MeshBatch</span></span><br><span class="line">        <span class="type">const</span> uint32 NumPrimitives = <span class="built_in">SetMeshElementGeometrySource</span>(LODIndex, SectionIndex, bWireframe, bRequiresAdjacencyInformation, bUseReversedIndices, bAllowPreCulledIndices, VertexFactory, OutMeshBatch);</span><br><span class="line">    <span class="comment">//...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>在BuildMeshDrawCommands中把VF的声明赋值给了BoundShaderState</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">template</span>&lt;<span class="keyword">typename</span> PassShadersType, <span class="keyword">typename</span> ShaderElementDataType&gt;</span></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">FMeshPassProcessor::BuildMeshDrawCommands</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function">    <span class="type">const</span> FMeshBatch&amp; RESTRICT MeshBatch,</span></span></span><br><span class="line"><span class="params"><span class="function">    uint64 BatchElementMask,</span></span></span><br><span class="line"><span class="params"><span class="function">    <span class="type">const</span> FPrimitiveSceneProxy* RESTRICT PrimitiveSceneProxy,</span></span></span><br><span class="line"><span class="params"><span class="function">    <span class="type">const</span> FMaterialRenderProxy&amp; RESTRICT MaterialRenderProxy,</span></span></span><br><span class="line"><span class="params"><span class="function">    <span class="type">const</span> FMaterial&amp; RESTRICT MaterialResource,</span></span></span><br><span class="line"><span class="params"><span class="function">    <span class="type">const</span> FMeshPassProcessorRenderState&amp; RESTRICT DrawRenderState,</span></span></span><br><span class="line"><span class="params"><span class="function">    PassShadersType PassShaders,</span></span></span><br><span class="line"><span class="params"><span class="function">    ERasterizerFillMode MeshFillMode,</span></span></span><br><span class="line"><span class="params"><span class="function">    ERasterizerCullMode MeshCullMode,</span></span></span><br><span class="line"><span class="params"><span class="function">    FMeshDrawCommandSortKey SortKey,</span></span></span><br><span class="line"><span class="params"><span class="function">    EMeshPassFeatures MeshPassFeatures,</span></span></span><br><span class="line"><span class="params"><span class="function">    <span class="type">const</span> ShaderElementDataType&amp; ShaderElementData)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="type">const</span> FVertexFactory* RESTRICT VertexFactory = MeshBatch.VertexFactory;</span><br><span class="line">    <span class="type">const</span> FPrimitiveSceneInfo* RESTRICT PrimitiveSceneInfo = PrimitiveSceneProxy ? PrimitiveSceneProxy-&gt;<span class="built_in">GetPrimitiveSceneInfo</span>() : <span class="literal">nullptr</span>;</span><br><span class="line"></span><br><span class="line">    FMeshDrawCommand SharedMeshDrawCommand;</span><br><span class="line"></span><br><span class="line">    SharedMeshDrawCommand.<span class="built_in">SetStencilRef</span>(DrawRenderState.<span class="built_in">GetStencilRef</span>());</span><br><span class="line"></span><br><span class="line">    FGraphicsMinimalPipelineStateInitializer PipelineState;</span><br><span class="line">    PipelineState.PrimitiveType = (EPrimitiveType)MeshBatch.Type;</span><br><span class="line">    PipelineState.ImmutableSamplerState = MaterialRenderProxy.ImmutableSamplerState;</span><br><span class="line"></span><br><span class="line">    EVertexInputStreamType InputStreamType = EVertexInputStreamType::Default;</span><br><span class="line">    <span class="keyword">if</span> ((MeshPassFeatures &amp; EMeshPassFeatures::PositionOnly) != EMeshPassFeatures::Default)             InputStreamType = EVertexInputStreamType::PositionOnly;</span><br><span class="line">    <span class="keyword">if</span> ((MeshPassFeatures &amp; EMeshPassFeatures::PositionAndNormalOnly) != EMeshPassFeatures::Default)   InputStreamType = EVertexInputStreamType::PositionAndNormalOnly;</span><br><span class="line"></span><br><span class="line">    <span class="built_in">check</span>(VertexFactory &amp;&amp; VertexFactory-&gt;<span class="built_in">IsInitialized</span>());</span><br><span class="line">    FRHIVertexDeclaration* VertexDeclaration = VertexFactory-&gt;<span class="built_in">GetDeclaration</span>(InputStreamType);</span><br><span class="line"></span><br><span class="line">    <span class="built_in">check</span>(!VertexFactory-&gt;<span class="built_in">NeedsDeclaration</span>() || VertexDeclaration);</span><br><span class="line">    <span class="comment">//赋值操作</span></span><br><span class="line">    SharedMeshDrawCommand.<span class="built_in">SetShaders</span>(VertexDeclaration, PassShaders.<span class="built_in">GetUntypedShaders</span>(), PipelineState);</span><br><span class="line">    </span><br><span class="line">    <span class="comment">//...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>在FMeshDrawCommand::SubmitDraw会重新获得MeshDrawCommands的BoundShaderState</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">if (MeshDrawCommand.CachedPipelineId.GetId() != StateCache.PipelineId)</span><br><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">    FGraphicsPipelineStateInitializer GraphicsPSOInit = MeshPipelineState.AsGraphicsPipelineStateInitializer();</span><br><span class="line">    RHICmdList.ApplyCachedRenderTargets(GraphicsPSOInit);</span><br><span class="line">    SetGraphicsPipelineState(RHICmdList<span class="punctuation">,</span> GraphicsPSOInit);</span><br><span class="line">    StateCache.SetPipelineState(MeshDrawCommand.CachedPipelineId.GetId());</span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<p>在SetGraphicsPipelineState中会把BoundShaderState转换成对应平台RHI的子类，以OpenGL举例：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">virtual void RHISetGraphicsPipelineState(FRHIGraphicsPipelineState* GraphicsState<span class="punctuation">,</span> bool bApplyAdditionalState) final override</span><br><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">    FRHIGraphicsPipelineStateFallBack* FallbackGraphicsState = static_cast&lt;FRHIGraphicsPipelineStateFallBack*&gt;(GraphicsState);</span><br><span class="line"></span><br><span class="line">    auto&amp; PsoInit = FallbackGraphicsState-&gt;Initializer;</span><br><span class="line"></span><br><span class="line">    RHISetBoundShaderState(</span><br><span class="line">       RHICreateBoundShaderState_internal(</span><br><span class="line">          PsoInit.BoundShaderState.VertexDeclarationRHI<span class="punctuation">,</span></span><br><span class="line">          PsoInit.BoundShaderState.VertexShaderRHI<span class="punctuation">,</span></span><br><span class="line">          TESSELLATION_SHADER(PsoInit.BoundShaderState.HullShaderRHI)<span class="punctuation">,</span></span><br><span class="line">          TESSELLATION_SHADER(PsoInit.BoundShaderState.DomainShaderRHI)<span class="punctuation">,</span></span><br><span class="line">          PsoInit.BoundShaderState.PixelShaderRHI<span class="punctuation">,</span></span><br><span class="line">          GEOMETRY_SHADER(PsoInit.BoundShaderState.GeometryShaderRHI)<span class="punctuation">,</span></span><br><span class="line">          PsoInit.bFromPSOFileCache</span><br><span class="line">       ).GetReference()</span><br><span class="line">    );</span><br><span class="line"><span class="comment">//...</span></span><br><span class="line"></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">FOpenGLDynamicRHI::RHIDrawPrimitive</span><span class="params">(uint32 BaseVertexIndex,uint32 NumPrimitives,uint32 NumInstances)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="built_in">SCOPE_CYCLE_COUNTER_DETAILED</span>(STAT_OpenGLDrawPrimitiveTime);</span><br><span class="line">    <span class="built_in">VERIFY_GL_SCOPE</span>();</span><br><span class="line">    <span class="built_in">RHI_DRAW_CALL_STATS</span>(PrimitiveType,NumPrimitives*NumInstances);</span><br><span class="line"></span><br><span class="line">    FOpenGLContextState&amp; ContextState = <span class="built_in">GetContextStateForCurrentContext</span>();</span><br><span class="line">    <span class="built_in">BindPendingFramebuffer</span>(ContextState);</span><br><span class="line">    <span class="built_in">SetPendingBlendStateForActiveRenderTargets</span>(ContextState);</span><br><span class="line">    <span class="built_in">UpdateViewportInOpenGLContext</span>(ContextState);</span><br><span class="line">    <span class="built_in">UpdateScissorRectInOpenGLContext</span>(ContextState);</span><br><span class="line">    <span class="built_in">UpdateRasterizerStateInOpenGLContext</span>(ContextState);</span><br><span class="line">    <span class="built_in">UpdateDepthStencilStateInOpenGLContext</span>(ContextState);</span><br><span class="line">    <span class="built_in">BindPendingShaderState</span>(ContextState);</span><br><span class="line">    <span class="built_in">CommitGraphicsResourceTables</span>();</span><br><span class="line">    <span class="built_in">SetupTexturesForDraw</span>(ContextState);</span><br><span class="line">    <span class="built_in">SetupUAVsForDraw</span>(ContextState);</span><br><span class="line">    <span class="built_in">CommitNonComputeShaderConstants</span>();</span><br><span class="line">    <span class="built_in">CachedBindElementArrayBuffer</span>(ContextState,<span class="number">0</span>);</span><br><span class="line">    uint32 VertexCount = <span class="built_in">GetVertexCountForPrimitiveCount</span>(NumPrimitives,PrimitiveType);</span><br><span class="line">    <span class="comment">//设置顶点数组</span></span><br><span class="line">    <span class="built_in">SetupVertexArrays</span>(ContextState, BaseVertexIndex, PendingState.Streams, NUM_OPENGL_VERTEX_STREAMS, VertexCount);</span><br><span class="line">    <span class="comment">//...</span></span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+<p>UE 在最后提交渲染命令DrawIndexPrimitive时，会先设置管线状态，设置顶点数组，这里就会用到我们上面绑定的顶点声明，参见FOpenGLDynamicRHI::SetupVertexArrays()，在这里我们终于得见底层的API接口调用：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">//FOpenGLDynamicRHI::SetupVertexArrays</span></span><br><span class="line">if (bAnyDifferent)</span><br><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">    if (!VertexElement.bShouldConvertToFloat)</span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">       FOpenGL<span class="punctuation">:</span><span class="punctuation">:</span>VertexAttribIFormat(AttributeIndex<span class="punctuation">,</span> VertexElement.Size<span class="punctuation">,</span> VertexElement.Type<span class="punctuation">,</span> VertexElement.Offset);</span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">    else</span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">       FOpenGL<span class="punctuation">:</span><span class="punctuation">:</span>VertexAttribFormat(AttributeIndex<span class="punctuation">,</span> VertexElement.Size<span class="punctuation">,</span> VertexElement.Type<span class="punctuation">,</span> VertexElement.bNormalized<span class="punctuation">,</span> VertexElement.Offset);</span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line"></span><br><span class="line">    Attr.StreamOffset = VertexElement.Offset;</span><br><span class="line">    Attr.Size = VertexElement.Size;</span><br><span class="line">    Attr.Type = VertexElement.Type;</span><br><span class="line">    Attr.bNormalized = VertexElement.bNormalized;</span><br><span class="line">    Attr.bShouldConvertToFloat = VertexElement.bShouldConvertToFloat;</span><br><span class="line"><span class="punctuation">&#125;</span></span><br><span class="line"></span><br><span class="line">if (Attr.StreamIndex != StreamIndex)</span><br><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">    FOpenGL<span class="punctuation">:</span><span class="punctuation">:</span>VertexAttribBinding(AttributeIndex<span class="punctuation">,</span> VertexElement.StreamIndex);</span><br><span class="line">    Attr.StreamIndex = StreamIndex;</span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<p>这里用到了两个API接口VertexAttribIFormat和VertexAttribBinding 设置顶点属性和偏移等数据。</p>
+<p>VertexAttribIFormat 用来设置顶点属性，告诉API如何读取数据。</p>
+<p>VertexAttribBinding 用来设置哪个属性在哪个缓冲区对象中，这里不同的缓冲区对象对应不同的streamIndex</p>
+<p>回过头来看顶点工厂在顶点声明的时候，其中数据所处的Streams数组中的Index决定了当前属性的缓冲区索引</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">FVertexElement FVertexFactory<span class="punctuation">:</span><span class="punctuation">:</span>AccessStreamComponent(const FVertexStreamComponent&amp; Component<span class="punctuation">,</span> uint8 AttributeIndex)</span><br><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">    FVertexStream VertexStream;</span><br><span class="line">    VertexStream.VertexBuffer = Component.VertexBuffer;</span><br><span class="line">    VertexStream.Stride = Component.Stride;</span><br><span class="line">    VertexStream.Offset = Component.StreamOffset;</span><br><span class="line">    VertexStream.VertexStreamUsage = Component.VertexStreamUsage;</span><br><span class="line"></span><br><span class="line">    return FVertexElement(Streams.AddUnique(VertexStream)<span class="punctuation">,</span>Component.Offset<span class="punctuation">,</span>Component.Type<span class="punctuation">,</span>AttributeIndex<span class="punctuation">,</span>VertexStream.Stride<span class="punctuation">,</span> EnumHasAnyFlags(EVertexStreamUsage<span class="punctuation">:</span><span class="punctuation">:</span>Instancing<span class="punctuation">,</span> VertexStream.VertexStreamUsage));</span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<p>至于顶点缓冲的绑定也同样是在SetUpVertexArray中，调用了BindVertexBuffer</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br></pre></td><td class="code"><pre><span class="line">for (uint32 StreamIndex = <span class="number">0</span>; StreamIndex &lt; NumStreams &amp;&amp; StreamMask; StreamIndex++)</span><br><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">    if (StreamMask &amp; <span class="number">0x1</span>)</span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">       FOpenGLStream &amp;CachedStream = ContextState.VertexStreams<span class="punctuation">[</span>StreamIndex<span class="punctuation">]</span>;</span><br><span class="line">       FOpenGLStream &amp;Stream = Streams<span class="punctuation">[</span>StreamIndex<span class="punctuation">]</span>;</span><br><span class="line">       if (Stream.VertexBuffer)</span><br><span class="line">       <span class="punctuation">&#123;</span></span><br><span class="line">          uint32 Offset = BaseVertexIndex * Stream.Stride + Stream.Offset;</span><br><span class="line">          bool bAnyDifferent = <span class="comment">//bitwise ors to get rid of the branches</span></span><br><span class="line">             (CachedStream.VertexBuffer != Stream.VertexBuffer) |</span><br><span class="line">             (CachedStream.Stride != Stream.Stride)|</span><br><span class="line">             (CachedStream.Offset != Offset);</span><br><span class="line"></span><br><span class="line">          if (bAnyDifferent)</span><br><span class="line">          <span class="punctuation">&#123;</span></span><br><span class="line">             check(Stream.VertexBuffer-&gt;Resource != <span class="number">0</span>);</span><br><span class="line">             FOpenGL<span class="punctuation">:</span><span class="punctuation">:</span>BindVertexBuffer(StreamIndex<span class="punctuation">,</span> Stream.VertexBuffer-&gt;Resource<span class="punctuation">,</span> Offset<span class="punctuation">,</span> Stream.Stride);</span><br><span class="line">             CachedStream.VertexBuffer = Stream.VertexBuffer;</span><br><span class="line">             CachedStream.Offset = Offset;</span><br><span class="line">             CachedStream.Stride = Stream.Stride;</span><br><span class="line">          <span class="punctuation">&#125;</span></span><br><span class="line">          if (UpdateDivisors &amp;&amp; CachedStream.Divisor != Divisor<span class="punctuation">[</span>StreamIndex<span class="punctuation">]</span>)</span><br><span class="line">          <span class="punctuation">&#123;</span></span><br><span class="line">             FOpenGL<span class="punctuation">:</span><span class="punctuation">:</span>VertexBindingDivisor(StreamIndex<span class="punctuation">,</span> Divisor<span class="punctuation">[</span>StreamIndex<span class="punctuation">]</span>);</span><br><span class="line">             CachedStream.Divisor = Divisor<span class="punctuation">[</span>StreamIndex<span class="punctuation">]</span>;</span><br><span class="line">          <span class="punctuation">&#125;</span></span><br><span class="line">       <span class="punctuation">&#125;</span></span><br><span class="line">       else</span><br><span class="line">       <span class="punctuation">&#123;</span></span><br><span class="line">          UE_LOG(LogRHI<span class="punctuation">,</span> Error<span class="punctuation">,</span> TEXT(<span class="string">&quot;Stream %d marked as in use, but vertex buffer provided is NULL (Mask = %x)&quot;</span>)<span class="punctuation">,</span> StreamIndex<span class="punctuation">,</span> StreamMask);</span><br><span class="line">          </span><br><span class="line">          FOpenGL<span class="punctuation">:</span><span class="punctuation">:</span>BindVertexBuffer(StreamIndex<span class="punctuation">,</span> <span class="number">0</span><span class="punctuation">,</span> <span class="number">0</span><span class="punctuation">,</span> <span class="number">0</span>);</span><br><span class="line">          CachedStream.VertexBuffer = nullptr;</span><br><span class="line">          CachedStream.Offset = <span class="number">0</span>;</span><br><span class="line">          CachedStream.Stride = <span class="number">0</span>;</span><br><span class="line">       <span class="punctuation">&#125;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">    StreamMask &gt;&gt;= <span class="number">1</span>;</span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<p>最后附上VF和shader中变量生效的调用栈：</p>
+<p>VF的ModifyCompilationEnvironment</p>
+<p><img src="/2023/11/05/VertexFactory/VF_modify.jpg" alt="VF_modify"></p>
+<p>Shader的modifyCompilationEnvironment</p>
+<p><img src="/2023/11/05/VertexFactory/Shader_modify.jpg" alt="Shader_modify"></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/UE%E6%BA%90%E7%A0%81/" rel="tag"># UE源码</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/2024/04/18/%E7%90%83%E8%B0%90%E5%85%89%E7%85%A7/" rel="next" title="球谐光照">
+      球谐光照 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#UE-VertexFactory"><span class="nav-number">1.</span> <span class="nav-text">UE VertexFactory</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-%E5%9C%A8FBX%E4%B8%8EStaticMesh%E4%B9%8B%E9%97%B4%E5%85%BC%E5%AE%B9"><span class="nav-number">1.1.</span> <span class="nav-text">1.在FBX与StaticMesh之间兼容</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-%E5%9C%A8StaticMesh%E5%92%8Cshader%E4%B8%AD%E5%85%BC%E5%AE%B9"><span class="nav-number">1.2.</span> <span class="nav-text">2.在StaticMesh和shader中兼容</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Ritchie"
+      src="/images/avatar.jpg">
+  <p class="site-author-name" itemprop="name">Ritchie</p>
+  <div class="site-description" itemprop="description">Engine/Graphics 爱好者 做人没有梦想,那和咸鱼有什么区别</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">14</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">2</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2025</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Ritchie</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-area"></i>
+    </span>
+      <span class="post-meta-item-text">站点总字数：</span>
+    <span title="站点总字数">27k</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+      <span class="post-meta-item-text">站点阅读时长 &asymp;</span>
+    <span title="站点阅读时长">1:40</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js"></script>
+  <script src="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+
+<script>
+  if (typeof MathJax === 'undefined') {
+    window.MathJax = {
+      loader: {
+        source: {
+          '[tex]/amsCd': '[tex]/amscd',
+          '[tex]/AMScd': '[tex]/amscd'
+        }
+      },
+      tex: {
+        inlineMath: {'[+]': [['$', '$']]},
+        tags: 'ams'
+      },
+      options: {
+        renderActions: {
+          findScript: [10, doc => {
+            document.querySelectorAll('script[type^="math/tex"]').forEach(node => {
+              const display = !!node.type.match(/; *mode=display/);
+              const math = new doc.options.MathItem(node.textContent, doc.inputJax[0], display);
+              const text = document.createTextNode('');
+              node.parentNode.replaceChild(text, node);
+              math.start = {node: text, delim: '', n: 0};
+              math.end = {node: text, delim: '', n: 0};
+              doc.math.push(math);
+            });
+          }, '', false],
+          insertedScript: [200, () => {
+            document.querySelectorAll('mjx-container').forEach(node => {
+              let target = node.parentNode;
+              if (target.nodeName.toLowerCase() === 'li') {
+                target.parentNode.classList.add('has-jax');
+              }
+            });
+          }, '', false]
+        }
+      }
+    };
+    (function () {
+      var script = document.createElement('script');
+      script.src = '//cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js';
+      script.defer = true;
+      document.head.appendChild(script);
+    })();
+  } else {
+    MathJax.startup.document.state(0);
+    MathJax.texReset();
+    MathJax.typeset();
+  }
+</script>
+
+    
+
+  
+
+</body>
+</html>

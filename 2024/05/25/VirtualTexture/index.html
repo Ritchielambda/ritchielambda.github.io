@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 7.1.1">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"ritchielambda.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":true,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="VirtualTexture工作流程VirtualTexture是利用时间换空间的技术，核心原理就是通过把Texture划分成相同大小的Page，在渲染时动态加载&#x2F;卸载对应的Page，而不是对整个贴图进行操作，整个过程需要三个数据结构，VirtualTexture，PageTable，PhysicalTexture。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="RumtimeVirtualTexture">
+<meta property="og:url" content="https://ritchielambda.github.io/2024/05/25/VirtualTexture/index.html">
+<meta property="og:site_name" content="Ritchie&#39;s Blog">
+<meta property="og:description" content="VirtualTexture工作流程VirtualTexture是利用时间换空间的技术，核心原理就是通过把Texture划分成相同大小的Page，在渲染时动态加载&#x2F;卸载对应的Page，而不是对整个贴图进行操作，整个过程需要三个数据结构，VirtualTexture，PageTable，PhysicalTexture。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://ritchielambda.github.io/2024/05/25/VirtualTexture/virtualtexture.png">
+<meta property="og:image" content="https://ritchielambda.github.io/2024/05/25/VirtualTexture/allocator.png">
+<meta property="og:image" content="https://ritchielambda.github.io/2024/05/25/VirtualTexture/DrawMesh.png">
+<meta property="og:image" content="https://ritchielambda.github.io/2024/05/25/VirtualTexture/RVTUV.png">
+<meta property="article:published_time" content="2024-05-25T00:00:00.000Z">
+<meta property="article:modified_time" content="2025-06-30T15:40:06.405Z">
+<meta property="article:author" content="Ritchie">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://ritchielambda.github.io/2024/05/25/VirtualTexture/virtualtexture.png">
+
+<link rel="canonical" href="https://ritchielambda.github.io/2024/05/25/VirtualTexture/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>RumtimeVirtualTexture | Ritchie's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+<link rel="alternate" href="/atom.xml" title="Ritchie's Blog" type="application/atom+xml">
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Ritchie's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://ritchielambda.github.io/2024/05/25/VirtualTexture/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpg">
+      <meta itemprop="name" content="Ritchie">
+      <meta itemprop="description" content="Engine/Graphics 爱好者 做人没有梦想,那和咸鱼有什么区别">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Ritchie's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          RumtimeVirtualTexture
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2024-05-25 00:00:00" itemprop="dateCreated datePublished" datetime="2024-05-25T00:00:00+00:00">2024-05-25</time>
+            </span>
+
+          
+            <span class="post-meta-item" title="本文字数">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+              <span>2.6k</span>
+            </span>
+            <span class="post-meta-item" title="阅读时长">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+              <span>9 分钟</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="VirtualTexture工作流程"><a href="#VirtualTexture工作流程" class="headerlink" title="VirtualTexture工作流程"></a>VirtualTexture工作流程</h1><p>VirtualTexture是利用时间换空间的技术，核心原理就是通过把Texture划分成相同大小的Page，在渲染时动态加载/卸载对应的Page，而不是对整个贴图进行操作，整个过程需要三个数据结构，VirtualTexture，PageTable，PhysicalTexture。</p>
+<span id="more"></span>
+<p><img src="/2024/05/25/VirtualTexture/virtualtexture.png" alt="virtualtexture"></p>
+<h2 id="数据结构整理"><a href="#数据结构整理" class="headerlink" title="数据结构整理"></a>数据结构整理</h2><h3 id="FVirtualTextureSpace"><a href="#FVirtualTextureSpace" class="headerlink" title="FVirtualTextureSpace"></a>FVirtualTextureSpace</h3><p>​    一个VirtualTexture的空间，可能包含多个AllocatedVT，空间里的多个VT共享一个坐标系，包含一个Allocator成员用来分配VT，采用先大后小的分配原则，即对于小页面，不断产生child页面来匹配直到匹配到合适的。线分配1024×1024的page，接着分配512，最后分配256的直到大小匹配。</p>
+<p><img src="/2024/05/25/VirtualTexture/allocator.png" alt="image-20240604173802513"></p>
+<h3 id="FVirtualTextureProducer"><a href="#FVirtualTextureProducer" class="headerlink" title="FVirtualTextureProducer"></a>FVirtualTextureProducer</h3><p>与RVT Volume一一对应，用来生产VT的page数据，里面包含有IVirtualTexture成员，该成员的RequestPageData和ProducePageData接口用来真正创建后续绘制VT需要的数据。</p>
+<h3 id="FAllocatedVirtualTexture"><a href="#FAllocatedVirtualTexture" class="headerlink" title="FAllocatedVirtualTexture"></a>FAllocatedVirtualTexture</h3><p>被分配的VT数据，与RVT Volume一一对应，可以注意到每个地形都可以指定一个渲染的RVT，而RVTVolume里也有一个RVT，如果一个地形被包含在RVTVolume中，但是指定的VT与Volume的不同，那么也不会被渲染。AllocatedVT可以理解成一个数据中心，包含了RVT Volume中的VT中的数据，包括每个layer对应的producer，以及Producer中对应的PhysicalGroup。</p>
+<p>如果一个RVT在创建时指定了bSinglePhysicalSpace为true，那么所有的layer都会指向一个physicalgroup，否则的话按照layer来区分group，代码参考GetProducerDescription。</p>
+<h3 id="FVirtualTexturePhysicalSpace"><a href="#FVirtualTexturePhysicalSpace" class="headerlink" title="FVirtualTexturePhysicalSpace"></a>FVirtualTexturePhysicalSpace</h3><p>VT的物理地址空间，是AllocatedVT中的UniquePageTableLayers数据中的成员，如上面所说，如果bSinglePhysicalSpace为true，那么AllocatedVT中所有layer都指向一个group，也就是同一个物理空间。</p>
+<p>PhysicalSpace下面还管理了一个FTexturePagePool，用来真正保存PhysicalPage，以及对应的操作。</p>
+<h2 id="工作流"><a href="#工作流" class="headerlink" title="工作流"></a>工作流</h2><p>VirtualTexture的数据一切都是从场景中放置的Volume，Volume包含VirtualTextureComponent，会向VirtualTextureSystem注册Producer数据，以及申请对应的FAllocatedVirtualTexture。看代码的时候很容易被各种Index和起名相近的数据结构搞混淆。一个Volume对应一个Producer，对应一个FAllocatedVirtualTexture，FAllocatedVirtualTexture是通过VirtualTextureSystem的Allocator分配的，同一个Space下可以分配多个FAllocatedVirtualTexture。</p>
+<h3 id="1-Render产生FeedBack数据"><a href="#1-Render产生FeedBack数据" class="headerlink" title="1. Render产生FeedBack数据"></a>1. Render产生FeedBack数据</h3><p>这一部分的入口在basepasspixelshader最后的FinalizeVirtualTextureFeedback函数。里面实现很简单，就是把对应像素位置填充上需要加载的VT数据，为了控制带宽，这里不是每个像素都会产生加载请求，而是由VIRTUAL_TEXTURE_FEEDBACK_FACTOR决定更新颗粒度，颗粒度越小更新越细，当然性能也越差，颗粒度大会有部分像素没法更新VT的情况。里面填充的加载申请是在TextureLoadVirtualPageTable被填充。</p>
+<h3 id="2-CPU处理FeedBack数据"><a href="#2-CPU处理FeedBack数据" class="headerlink" title="2. CPU处理FeedBack数据"></a>2. CPU处理FeedBack数据</h3><p>GPU端每帧渲染完画面会产生VT的加载请求，CPU端会在FVirtualTextureSystem::Update中做一系列处理。</p>
+<h4 id="2-1-请求数据筛选整理"><a href="#2-1-请求数据筛选整理" class="headerlink" title="2.1 请求数据筛选整理"></a>2.1 请求数据筛选整理</h4><h5 id="2-1-1-合并同类请求"><a href="#2-1-1-合并同类请求" class="headerlink" title="2.1.1 合并同类请求"></a>2.1.1 合并同类请求</h5><p>多个像素可能申请同一个VT Page，我们需要合并这类请求，这一步通过FFeedbackAnalysisTask多线程处理。</p>
+<h5 id="2-1-2-筛选请求数据"><a href="#2-1-2-筛选请求数据" class="headerlink" title="2.1.2 筛选请求数据"></a>2.1.2 筛选请求数据</h5><p>​    这一步UE同样用了多线程GatherRequestsTask来处理，每个线程处理若干Page的请求。</p>
+<ol>
+<li>对每个PageRequest<ol>
+<li>通过PageMap查找物理Page，<ol>
+<li>如果存在更新，更新PagePool的FreeHeap</li>
+<li>如果不存在记录当前Page的Layer到ToLoad</li>
+</ol>
+</li>
+<li>记录步骤1需要加载的LayerPage的Producer和对应的Group。</li>
+<li>对步骤二的Producer和Group进行循环<ol>
+<li>Producer循环</li>
+<li>对Group循环<ol>
+<li>找到最大分辨率对应的Physicalpage，更新存在physicalpage的LRU</li>
+<li>对所有指向当前group的layer进行Mapping更新</li>
+<li>如果当前group的physicalPage的分辨率远低于申请的，先做预取</li>
+<li>对预取的group申请加载（步骤1.3.2.3得到了对应预取的group，但是我们需要对所有没有对应分辨率的group一起预取，保证所有group数据同步），更新VirtualAdress和PhysicalAdress的mapping</li>
+<li>对于步骤2记录的group申请加载，更新Mapping。</li>
+</ol>
+</li>
+</ol>
+</li>
+</ol>
+</li>
+</ol>
+<h5 id="2-1-3-提交请求"><a href="#2-1-3-提交请求" class="headerlink" title="2.1.3 提交请求"></a>2.1.3 提交请求</h5><ol>
+<li>加载请求：<ol>
+<li>找到请求的producer，对每一个group处理（之前的申请加载参数包含了groupIndex），找到group对应的physicalSpace，申请物理地址，更新ProduceTarget数组</li>
+<li>对于没申请 的group，也填充ProduceTarget数据</li>
+<li>调用ProducePageData生成后面的绘制数据。</li>
+</ol>
+</li>
+<li>Mapping请求</li>
+</ol>
+<p>​    注意这里填充ProduceTarget会赋值两个关键数据：Physical渲染到那个Texture，以及PhysicalPage在Texture的位置，不同的Group拥有不同的PhysicalSpace，所以对应的Texture是不一样的。</p>
+<h4 id="2-2-绘制PhysicalTexture"><a href="#2-2-绘制PhysicalTexture" class="headerlink" title="2.2 绘制PhysicalTexture"></a>2.2 绘制PhysicalTexture</h4><p><img src="/2024/05/25/VirtualTexture/DrawMesh.png" alt="image-20240528211507163"></p>
+<p>这一步的入口还是在SubmitRequests中，对上一步生成的IVirtualTextureFinalizer::Finalize进行绘制，最终生成共用同一个TextureRHI的Page批次信息，调用RenderPages进行同批次绘制，RenderPage则是对单个Page进行绘制，步骤如下：</p>
+<ol>
+<li>设置单个Page需要的View信息，Camera位置。</li>
+<li>调用DrawMeshs绘制当前场景中RuntimeVirtualTextureMask符合的物体。</li>
+<li>调用CompressPass来压缩第二步的RT</li>
+<li>将压缩后的RT合并成更少的RT，以底色、法线、粗糙度、高光度为例，读取3张Texture，Packed并写入到2个RT中。</li>
+<li>将合并后的RT放到PhysicalTexture的对应物理位置上去</li>
+</ol>
+<p>设置View信息时，会根据当前page的UV中心来设置相机位置，确保只渲染当前page</p>
+<p>DrawMeshs时用来筛选物体的RuntimeVirtualTextureMask是在UpdateRuntimeVirtualTextureFlags中更新的，与FRuntimeVirtualTextureSceneProxy一一对应，考虑到一共只有7位预留，也就是说场景中最多存在7个RVTVolume（看代码注释有说会扩展，当超出7位后，会舍弃Mask方法去遍历图元的virtualtexture）</p>
+<p>第五步Copy到PhysicalTexture时，Page在Physical中的位置信息是在2.1.3提交请求中填充ProduceTarget.pPageLocation赋值的，pPageLocation代表的是当前page在physicaltexture中的位置，比如当前physicaltexture中包含8×8个page，pPageLocation为（1，1）</p>
+<h4 id="2-3-更新PageTable"><a href="#2-3-更新PageTable" class="headerlink" title="2.3 更新PageTable"></a>2.3 更新PageTable</h4><p>这一步的入口在FVirtualTextureSpace::ApplyUpdates中，把上面申请加载的physicaltexture更新到对应的PageTable中，数据来源是FVirtualTextureSystem::SubmitRequests中的MappingRequest。这一步主要做了两件事</p>
+<ol>
+<li>更新pagetable上的四叉树子节点</li>
+<li>把pagetableCPU端的buffer渲染到GPU端的RT</li>
+</ol>
+<p>更新部分：PageMap是Mip组成的，MipMap本身可以用四叉树结构来表示，这里用了莫顿码来帮助搜索四叉树，可以快速找到当前Mip的子tile。</p>
+<p>渲染部分：入口是在TPageTableUpdateVS，这里用的Instance多实例渲染，每个实例绘制8个quad，在VS中根据InstanceID和VextexID来取得cpu端对应传入的buffer数据，写到Color里。</p>
+<h3 id="3-GPU端采样VirtualTexture"><a href="#3-GPU端采样VirtualTexture" class="headerlink" title="3. GPU端采样VirtualTexture"></a>3. GPU端采样VirtualTexture</h3><p>通过前面几步，我们得到了：混合了各个Mip的PhysicalTexture合集，以及映射vaddress和paddress的pagetable，接下来看如何使用这两个数据：</p>
+<p>采样的代码通常在materialtemplete中被填充，主要有两个shader函数TextureLoadVirtualPageTable，TextureVirtualSample。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">VTPageTableResult Local1 = TextureLoadVirtualPageTable( Material_VirtualTexturePageTable0_0 , VTPageTableUniform_Unpack(Material_VTPackedPageTableUniform[0*2], Material_VTPackedPageTableUniform[0*2+1]), VirtualTextureWorldToUV(GetWorldPosition(Parameters), Material_VectorExpressions[3].rgb, Material_VectorExpressions[2].rgb, Material_VectorExpressions[1].rgb),  0u ,  0u , View_MaterialTextureMipBias, Parameters.SvPosition.xy, 0U +  0 , Parameters.VirtualTextureFeedback);</span><br><span class="line">float4  Local2 = TextureVirtualSample(Material_VirtualTexturePhysical_0, GetMaterialSharedSampler(Material_VirtualTexturePhysical_0Sampler, View_SharedBilinearAnisoClampedSampler), Local1, 0, VTUniform_Unpack(Material_VTPackedUniform[0]));</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<p>TextureLoadVirtualPageTable负责生成VTPageTableResult结构，TextureVirtualSample负责用VTPageTableResult真正执行Physical采样。</p>
+<h4 id="3-1-TextureLoadVirtualPageTable"><a href="#3-1-TextureLoadVirtualPageTable" class="headerlink" title="3.1 TextureLoadVirtualPageTable"></a>3.1 TextureLoadVirtualPageTable</h4><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">VTPageTableResult TextureLoadVirtualPageTable(Texture2D&lt;uint4&gt; PageTable0, Texture2D&lt;uint4&gt; PageTable1,</span><br><span class="line">    float2 UV, float MipBias,</span><br><span class="line">    float2 SvPositionXY,</span><br><span class="line">    VTPageTableUniform PageTableUniform,</span><br><span class="line">    uint AddressU, uint AddressV)</span><br><span class="line">&#123;</span><br><span class="line">    VTPageTableResult Result = (VTPageTableResult)0.0f;</span><br><span class="line">    const float2 ScaledUV = UV * PageTableUniform.UVScale;</span><br><span class="line">    uint vLevel = 0u;</span><br><span class="line">#if PIXELSHADER</span><br><span class="line">    vLevel = TextureComputeVirtualMipLevel(Result, ddx(ScaledUV), ddy(ScaledUV), MipBias, SvPositionXY, PageTableUniform);</span><br><span class="line">#endif // PIXELSHADER</span><br><span class="line">    TextureLoadVirtualPageTableInternal(Result, PageTable0, PageTable1, ScaledUV, vLevel, PageTableUniform, AddressU, AddressV);</span><br><span class="line">    return Result;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>​    这一步通过RVT的UV坐标，计算得到对应pagetable的坐标。RVT的UV坐标指的是当前像素在runtimevirtualtexturevolume内的坐标</p>
+<p><img src="/2024/05/25/VirtualTexture/RVTUV.png" alt="image-20240603163649497"></p>
+<p>以上图为例，黄色线框为场景 中的RVTVolume，里面包含两个带有RVT的地形块，RVT的坐标就是根据世界坐标换算到以RVTVolume的原点，XY轴为坐标轴的坐标系。代码参考如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">float2 VirtualTextureWorldToUV(in float3 WorldPos, in float3 Origin, in float3 U, in float3 V)</span><br><span class="line">&#123;</span><br><span class="line">    float3 P = WorldPos - Origin;</span><br><span class="line">    return saturate(float2(dot(P, U), dot(P, V)));</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>接着通过TextureComputeVirtualMipLevel得到需要采样的MipLevel，这里额外加了一个噪声扰动以及通过UV的导数来计算MipLevel，通常dUVdx越大，对应的Mip越小（越模糊）。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">int TextureComputeVirtualMipLevel(</span><br><span class="line">    in out VTPageTableResult OutResult,</span><br><span class="line">    float2 dUVdx, float2 dUVdy, float MipBias,</span><br><span class="line">    float2 SvPositionXY,</span><br><span class="line">    VTPageTableUniform PageTableUniform)</span><br><span class="line">&#123;</span><br><span class="line">    OutResult.dUVdx = dUVdx * PageTableUniform.SizeInPages;</span><br><span class="line">    OutResult.dUVdy = dUVdy * PageTableUniform.SizeInPages;</span><br><span class="line"></span><br><span class="line">    const float Noise = InterleavedGradientNoise(SvPositionXY, View.StateFrameIndexMod8);</span><br><span class="line">    const float ComputedLevel = MipLevelAniso2D(OutResult.dUVdx, OutResult.dUVdy, PageTableUniform.MaxAnisoLog2) + MipBias + Noise * 0.5f - 0.25f;</span><br><span class="line"></span><br><span class="line">    return (int)floor(ComputedLevel) + int(PageTableUniform.vPageTableMipBias);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>得到了PageTable需要求值的Level，接下来通过TextureLoadVirtualPageTableInternal取得对应值，这一步有两个作用，一是填充PageTableValue方便后面采样，二是生成Feedbackrequest，给CPU加载。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line">void TextureLoadVirtualPageTableInternal(</span><br><span class="line">    in out VTPageTableResult OutResult,</span><br><span class="line">    Texture2D&lt;uint4&gt; PageTable0,</span><br><span class="line">    VTPageTableUniform PageTableUniform,</span><br><span class="line">    float2 UV, int vLevel)</span><br><span class="line">&#123;</span><br><span class="line">    //这里的sizeinpage 推测应该是page的个数，而不是page的大小</span><br><span class="line">    //输入UV 是0.6 Page个数是8</span><br><span class="line">    //Outresult.uv 就是4.8 表示在第四个page中 page内坐标是0.8</span><br><span class="line">    OutResult.UV = UV * PageTableUniform.SizeInPages;</span><br><span class="line"></span><br><span class="line">    const uint vLevelClamped = clamp(vLevel, 0, int(PageTableUniform.MaxLevel));</span><br><span class="line">    const uint vPageX = (uint(OutResult.UV.x) + PageTableUniform.XOffsetInPages) &gt;&gt; vLevelClamped;</span><br><span class="line">    const uint vPageY = (uint(OutResult.UV.y) + PageTableUniform.YOffsetInPages) &gt;&gt; vLevelClamped;</span><br><span class="line">    //根据UV 坐标拿到pagetable的 值</span><br><span class="line">    OutResult.PageTableValue[0] = PageTable0.Load(int3(vPageX, vPageY, vLevelClamped));</span><br><span class="line">    OutResult.PageTableValue[1] = uint4(0u, 0u, 0u, 0u);</span><br><span class="line"></span><br><span class="line">    // PageTableID packed in upper 4 bits of &#x27;PackedPageTableUniform&#x27;, which is the bit position we want it in for PackedRequest as well, just need to mask off extra bits</span><br><span class="line">    OutResult.PackedRequest = PageTableUniform.ShiftedPageTableID;</span><br><span class="line">    OutResult.PackedRequest |= vPageX;</span><br><span class="line">    OutResult.PackedRequest |= vPageY &lt;&lt; 12;</span><br><span class="line"></span><br><span class="line">    // Feedback always encodes vLevel+1, and subtracts 1 on the CPU side.</span><br><span class="line">    // This allows the CPU code to know when we requested a negative vLevel which indicates that we don&#x27;t have sufficient virtual texture resolution.</span><br><span class="line">    const uint vLevelPlusOneClamped = clamp(vLevel + 1, 0, int(PageTableUniform.MaxLevel + 1));</span><br><span class="line">    OutResult.PackedRequest |= vLevelPlusOneClamped &lt;&lt; 24;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h4 id="3-2-TextureVirtualSample"><a href="#3-2-TextureVirtualSample" class="headerlink" title="3.2 TextureVirtualSample"></a>3.2 TextureVirtualSample</h4><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">MaterialFloat4 TextureVirtualSample(</span><br><span class="line">    Texture2D Physical, SamplerState PhysicalSampler,</span><br><span class="line">    VTPageTableResult PageTableResult, uint LayerIndex,</span><br><span class="line">    VTUniform Uniform)</span><br><span class="line">&#123;</span><br><span class="line">    const float2 pUV = VTComputePhysicalUVs(PageTableResult, LayerIndex, Uniform);</span><br><span class="line">    return Physical.SampleGrad(PhysicalSampler, pUV, PageTableResult.dUVdx, PageTableResult.dUVdy);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这一步根据上面得到的page坐标，以及UV坐标取得PhysicalTexture的真正坐标然后采样。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">float2 VTComputePhysicalUVs(in out VTPageTableResult PageTableResult, uint LayerIndex, VTUniform Uniform)</span><br><span class="line">&#123;</span><br><span class="line">    const uint PackedPageTableValue = PageTableResult.PageTableValue[LayerIndex / 4u][LayerIndex &amp; 3u];</span><br><span class="line"></span><br><span class="line">    // See packing in PageTableUpdate.usf</span><br><span class="line">    const uint vLevel = PackedPageTableValue &amp; 0xf;</span><br><span class="line">    const float UVScale = 1.0f / (float)(1 &lt;&lt; vLevel);</span><br><span class="line">    const float pPageX = (float)((PackedPageTableValue &gt;&gt; 4) &amp; ((1 &lt;&lt; Uniform.PageCoordinateBitCount) - 1));</span><br><span class="line">    const float pPageY = (float)(PackedPageTableValue &gt;&gt; (4 + Uniform.PageCoordinateBitCount));</span><br><span class="line">    //这里取小数部分得到page内的UV坐标</span><br><span class="line">    const float2 vPageFrac = frac(PageTableResult.UV * UVScale);</span><br><span class="line">    //这里得到在整个physical texture 上的坐标</span><br><span class="line">    const float2 pUV = float2(pPageX, pPageY) * Uniform.pPageSize + (vPageFrac * Uniform.vPageSize + Uniform.vPageBorderSize);</span><br><span class="line"></span><br><span class="line">    const float ddxyScale = UVScale * Uniform.vPageSize;</span><br><span class="line">    //表示当前miplevel 下 UV坐标+1 对应实际贴图移动的像素数</span><br><span class="line">    PageTableResult.dUVdx *= ddxyScale;</span><br><span class="line">    PageTableResult.dUVdy *= ddxyScale;</span><br><span class="line">    return pUV;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2024/04/18/%E7%90%83%E8%B0%90%E5%85%89%E7%85%A7/" rel="prev" title="球谐光照">
+      <i class="fa fa-chevron-left"></i> 球谐光照
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2024/06/13/GPUScene/" rel="next" title="GPUScene">
+      GPUScene <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#VirtualTexture%E5%B7%A5%E4%BD%9C%E6%B5%81%E7%A8%8B"><span class="nav-number">1.</span> <span class="nav-text">VirtualTexture工作流程</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84%E6%95%B4%E7%90%86"><span class="nav-number">1.1.</span> <span class="nav-text">数据结构整理</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#FVirtualTextureSpace"><span class="nav-number">1.1.1.</span> <span class="nav-text">FVirtualTextureSpace</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#FVirtualTextureProducer"><span class="nav-number">1.1.2.</span> <span class="nav-text">FVirtualTextureProducer</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#FAllocatedVirtualTexture"><span class="nav-number">1.1.3.</span> <span class="nav-text">FAllocatedVirtualTexture</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#FVirtualTexturePhysicalSpace"><span class="nav-number">1.1.4.</span> <span class="nav-text">FVirtualTexturePhysicalSpace</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B7%A5%E4%BD%9C%E6%B5%81"><span class="nav-number">1.2.</span> <span class="nav-text">工作流</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Render%E4%BA%A7%E7%94%9FFeedBack%E6%95%B0%E6%8D%AE"><span class="nav-number">1.2.1.</span> <span class="nav-text">1. Render产生FeedBack数据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-CPU%E5%A4%84%E7%90%86FeedBack%E6%95%B0%E6%8D%AE"><span class="nav-number">1.2.2.</span> <span class="nav-text">2. CPU处理FeedBack数据</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#2-1-%E8%AF%B7%E6%B1%82%E6%95%B0%E6%8D%AE%E7%AD%9B%E9%80%89%E6%95%B4%E7%90%86"><span class="nav-number">1.2.2.1.</span> <span class="nav-text">2.1 请求数据筛选整理</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#2-1-1-%E5%90%88%E5%B9%B6%E5%90%8C%E7%B1%BB%E8%AF%B7%E6%B1%82"><span class="nav-number">1.2.2.1.1.</span> <span class="nav-text">2.1.1 合并同类请求</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#2-1-2-%E7%AD%9B%E9%80%89%E8%AF%B7%E6%B1%82%E6%95%B0%E6%8D%AE"><span class="nav-number">1.2.2.1.2.</span> <span class="nav-text">2.1.2 筛选请求数据</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#2-1-3-%E6%8F%90%E4%BA%A4%E8%AF%B7%E6%B1%82"><span class="nav-number">1.2.2.1.3.</span> <span class="nav-text">2.1.3 提交请求</span></a></li></ol></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-2-%E7%BB%98%E5%88%B6PhysicalTexture"><span class="nav-number">1.2.2.2.</span> <span class="nav-text">2.2 绘制PhysicalTexture</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-3-%E6%9B%B4%E6%96%B0PageTable"><span class="nav-number">1.2.2.3.</span> <span class="nav-text">2.3 更新PageTable</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-GPU%E7%AB%AF%E9%87%87%E6%A0%B7VirtualTexture"><span class="nav-number">1.2.3.</span> <span class="nav-text">3. GPU端采样VirtualTexture</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#3-1-TextureLoadVirtualPageTable"><span class="nav-number">1.2.3.1.</span> <span class="nav-text">3.1 TextureLoadVirtualPageTable</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-2-TextureVirtualSample"><span class="nav-number">1.2.3.2.</span> <span class="nav-text">3.2 TextureVirtualSample</span></a></li></ol></li></ol></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Ritchie"
+      src="/images/avatar.jpg">
+  <p class="site-author-name" itemprop="name">Ritchie</p>
+  <div class="site-description" itemprop="description">Engine/Graphics 爱好者 做人没有梦想,那和咸鱼有什么区别</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">14</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">2</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2025</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Ritchie</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-area"></i>
+    </span>
+      <span class="post-meta-item-text">站点总字数：</span>
+    <span title="站点总字数">27k</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+      <span class="post-meta-item-text">站点阅读时长 &asymp;</span>
+    <span title="站点阅读时长">1:40</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js"></script>
+  <script src="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+  
+
+</body>
+</html>
